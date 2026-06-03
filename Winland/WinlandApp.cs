@@ -48,8 +48,8 @@ internal sealed class WinlandApp : ApplicationContext
 
         _tray = new TrayIcon(BuildStatusText, ReloadConfig, OpenConfig, ExitApplication);
 
-        // Tray icon shows the active workspace number, updated on each Win+N.
-        _workspaceManager.WorkspaceChanged += OnWorkspaceChanged;
+        // Tray icon lives on the primary monitor's taskbar, so it tracks that monitor's workspace.
+        _workspaceManager.PrimaryWorkspaceChanged += OnPrimaryWorkspaceChanged;
         _tray.SetWorkspace(_workspaceManager.PrimaryWorkspace);
 
         _tray.ShowBalloon(_hook.Installed
@@ -87,7 +87,7 @@ internal sealed class WinlandApp : ApplicationContext
         }
     }
 
-    private void OnWorkspaceChanged(int workspace) => _tray.SetWorkspace(workspace);
+    private void OnPrimaryWorkspaceChanged(int workspace) => _tray.SetWorkspace(workspace);
 
     private string BuildStatusText()
     {

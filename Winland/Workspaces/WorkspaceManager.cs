@@ -39,12 +39,19 @@ internal sealed class WorkspaceManager : IDisposable
     private readonly WinEventDelegate _winEventProc;
     private readonly List<IntPtr> _winEventHooks = new();
 
-    /// <summary>Raised (on the UI thread) with the workspace number whenever Win+N is handled.</summary>
-    public event Action<int>? WorkspaceChanged;
+    /// <summary>
+    /// Raised (on the UI thread) with the workspace currently shown on the primary monitor, whenever a
+    /// Win+N / release operation may have changed it. The tray icon lives on the primary monitor's
+    /// taskbar, so it must reflect that monitor's workspace — not whatever workspace a press happened to
+    /// switch on some other monitor.
+    /// </summary>
+    public event Action<int>? PrimaryWorkspaceChanged;
 
-    /// <summary>The workspace currently shown on the primary monitor (for the initial tray icon).</summary>
+    /// <summary>The workspace currently shown on the primary monitor (for the tray icon).</summary>
     public int PrimaryWorkspace =>
         (_monitors.Values.FirstOrDefault(m => m.Primary) ?? _monitors.Values.FirstOrDefault())?.Current ?? 1;
+
+    private void NotifyPrimaryWorkspace() => PrimaryWorkspaceChanged?.Invoke(PrimaryWorkspace);
 
     // Window events (foreground/minimize/move) are delivered asynchronously, so events triggered by
     // our OWN minimize/restore during a switch arrive AFTER the switch returns. While the current time
@@ -143,7 +150,7 @@ internal sealed class WorkspaceManager : IDisposable
         {
             FocusWorkspace(k);
             LogWorkspaces($"focus WS{k}");
-            WorkspaceChanged?.Invoke(k);
+            NotifyPrimaryWorkspace();
             return;
         }
 
@@ -155,7 +162,7 @@ internal sealed class WorkspaceManager : IDisposable
         GuardEvents();
 
         LogWorkspaces($"switch WS{k}");
-        WorkspaceChanged?.Invoke(k);
+        NotifyPrimaryWorkspace();
     }
 
     /// <summary>k's linked home monitor; on first entry it's pinned to the monitor under the cursor.</summary>
@@ -198,6 +205,7 @@ internal sealed class WorkspaceManager : IDisposable
         GuardEvents();
 
         LogWorkspaces($"release WS{w}");
+        NotifyPrimaryWorkspace();
     }
 
     private void GuardEvents() => _eventGuardUntilTick = Environment.TickCount + 1500;
