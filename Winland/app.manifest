@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <!-- Winland must run elevated so its low-level keyboard hook can intercept Win+<key> even when an
+       elevated (admin) window is focused — e.g. Visual Studio run as Administrator. A medium-integrity
+       hook is blocked (UIPI) from seeing input destined for higher-integrity windows. -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>

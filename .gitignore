@@ -1,0 +1,13 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio / Rider caches
+.vs/
+*.user
+
+# Claude Code local (machine-specific) settings
+.claude/settings.local.json
+
+# Winland runtime debug log
+winland-hooklog.txt
