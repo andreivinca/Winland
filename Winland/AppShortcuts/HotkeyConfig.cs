@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 
 namespace Winland;
 
@@ -166,9 +165,5 @@ internal static class HotkeyConfig
         return false;
     }
 
-    private static void Log(string message)
-    {
-        try { File.AppendAllText(@"E:\WinLand\winland-hooklog.txt", message + Environment.NewLine); }
-        catch { }
-    }
+    private static void Log(string message) => Winland.Log.Line(message);
 }

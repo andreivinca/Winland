@@ -232,6 +232,16 @@ internal sealed class WorkspaceManager : IDisposable
     // (when >= 1) so it is remembered as part of the outgoing workspace and restored when it returns.
     private void MinimizeMonitorWindows(MonitorState monitor, int assignTo, int keep)
     {
+        // Redefine the outgoing workspace as exactly the windows we're about to put away here — the
+        // ones still visible on the monitor. Any window the user minimized himself before leaving is
+        // no longer part of it, so forget those stale members first. This is safe precisely because
+        // the workspace's own windows are still visible at this point (we haven't minimized them yet),
+        // so the only iconic members of assignTo are user-minimized ones.
+        if (assignTo >= 1)
+        {
+            ForgetMinimizedMembers(assignTo);
+        }
+
         EnumWindows((h, _) =>
         {
             if (!IsManaged(h) || IsIconic(h))
@@ -257,6 +267,26 @@ internal sealed class WorkspaceManager : IDisposable
             ShowWindow(h, SW_MINIMIZE);
             return true;
         }, IntPtr.Zero);
+    }
+
+    // Drop every window currently assigned to <paramref name="workspace"/> that is minimized (or gone).
+    // Called when leaving a workspace: a minimized member at that moment is one the user put away
+    // himself, so it should no longer return when the workspace is next shown.
+    private void ForgetMinimizedMembers(int workspace)
+    {
+        var stale = new List<IntPtr>();
+        foreach (KeyValuePair<IntPtr, int> kv in _windowWorkspace)
+        {
+            if (kv.Value == workspace && (!IsWindow(kv.Key) || IsIconic(kv.Key)))
+            {
+                stale.Add(kv.Key);
+            }
+        }
+
+        foreach (IntPtr h in stale)
+        {
+            _windowWorkspace.Remove(h);
+        }
     }
 
     private List<IntPtr> WindowsOf(int workspace)
@@ -524,8 +554,7 @@ internal sealed class WorkspaceManager : IDisposable
             .OrderBy(m => m.Work.Left)
             .Select((m, i) => $"mon{i + 1}=WS{m.Current}");
         string line = $"[{action}] {string.Join("  ", parts)}";
-        try { System.IO.File.AppendAllText(@"E:\WinLand\winland-hooklog.txt", line + Environment.NewLine); }
-        catch { }
+        Log.Line(line);
     }
 
     // ----- Win32 -----
