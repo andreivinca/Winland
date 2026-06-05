@@ -24,7 +24,12 @@ internal static class AppLauncher
             string script = Path.Combine(AppContext.BaseDirectory, verb + ".ps1");
             if (File.Exists(script))
             {
-                string psArgs = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" {args}".TrimEnd();
+                // Invoke via -Command (not -File) so PowerShell parses the arguments: this lets a "--"
+                // token in a bind pass the rest through verbatim (incl. dash-prefixed args), which -File
+                // can't do. The script path is single-quoted (and any ' doubled) so spaces are safe.
+                string scriptLiteral = "'" + script.Replace("'", "''") + "'";
+                string command = $"& {scriptLiteral} {args}".TrimEnd();
+                string psArgs = $"-NoProfile -ExecutionPolicy Bypass -Command \"{command}\"";
                 Process.Start(new ProcessStartInfo("powershell.exe", psArgs)
                 {
                     UseShellExecute = false,

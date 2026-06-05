@@ -6,15 +6,17 @@
 .PARAMETER Match
   Process name to match an existing window against. Defaults to App's file name without extension.
 .PARAMETER LaunchArgs
-  Arguments passed to the app when launching it.
+  Arguments passed to the app when launching it. Everything after a "--" token is captured here, so
+  dash-prefixed args pass through verbatim, e.g.  launch-or-focus wt.exe WindowsTerminal -- -d E:\
 .EXAMPLE
-  launch-or-focus.ps1 -App firefox
-  launch-or-focus.ps1 -App code -Match Code
+  launch-or-focus.ps1 firefox
+  launch-or-focus.ps1 code Code
+  launch-or-focus.ps1 wt.exe WindowsTerminal -- -d E:\
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$App,
-    [string]$Match,
-    [string]$LaunchArgs
+    [Parameter(Mandatory = $true, Position = 0)][string]$App,
+    [Parameter(Position = 1)][string]$Match,
+    [Parameter(ValueFromRemainingArguments = $true)][string[]]$LaunchArgs
 )
 
 if ([string]::IsNullOrWhiteSpace($Match)) {
@@ -33,6 +35,7 @@ public static class LaunchFocus {
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint c);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
@@ -64,6 +67,14 @@ public static class LaunchFocus {
     BringWindowToTop(h);
     if(got) SpiSet(0x2001,0,(UIntPtr)orig,0);
   }
+
+  public static bool IsForegroundInSet(HashSet<int> pids){
+    IntPtr h = GetForegroundWindow();
+    if(h == IntPtr.Zero) return false;
+    uint pid;
+    GetWindowThreadProcessId(h, out pid);
+    return pids.Contains((int)pid);
+  }
 }
 '@
 
@@ -77,10 +88,10 @@ if ($pids.Count -gt 0) {
     $target = [LaunchFocus]::FindWindow($pids)
 }
 
-if ($target -ne [IntPtr]::Zero) {
+if ($target -ne [IntPtr]::Zero -and -not [LaunchFocus]::IsForegroundInSet($pids)) {
     [LaunchFocus]::Focus($target)
 }
-elseif ([string]::IsNullOrWhiteSpace($LaunchArgs)) {
+elseif ($null -eq $LaunchArgs -or $LaunchArgs.Count -eq 0) {
     Start-Process $App
 }
 else {
