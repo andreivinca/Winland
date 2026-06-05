@@ -9,6 +9,11 @@ Winland provides keyboard-first desktop productivity on Windows through three co
 
 The product goal is to deliver Hyprland/Omarchy-style workflow ergonomics on Windows while remaining lightweight, tray-resident, and fast to use.
 
+Implementation note: Winland is delivered as three cooperating processes — `winland-keys` (the
+hotkey daemon), `winland-env` (the window-manager service), and `winlandctl` (a control CLI). This is
+an architectural detail, not a product feature; the requirements below describe user-facing behavior
+regardless of process boundaries. See `architecture-overview.md`.
+
 ## 2. Product Vision
 
 A user should be able to:
@@ -63,9 +68,11 @@ Primary users:
 ## 6. User Experience Requirements
 
 ### 6.1 Startup & Presence
-- App starts as a tray application.
-- User receives startup balloon status (hook installed / failed).
-- Tray icon displays active workspace number of primary monitor.
+- Both daemons start as tray applications (each with its own icon on the primary taskbar); the start
+  script (`start-winland`) launches both with a single elevation prompt.
+- `winland-keys` shows a startup balloon (hook installed / failed); `winland-env` shows a control-
+  channel balloon.
+- The `winland-env` tray icon displays the active workspace number of the primary monitor.
 
 ### 6.2 Discoverability
 - Tray menu must expose:
@@ -85,7 +92,9 @@ Primary users:
 ## 7. Business Rules
 
 1. **Win key is primary modifier** for all claimed combos.
-2. **Built-in workspace and window-management shortcuts take precedence** over config binds when they overlap.
+2. **Bindings are resolved in file order** — the first matching `bind` wins. Workspace and
+   window-management combos are themselves binds (commands of the form `winlandctl <verb>`), not
+   reserved built-ins, so they can be rebound or removed.
 3. **Workspace switching affects only target monitor**; never alter unrelated monitors.
 4. **Released workspace can be re-homed** to a new monitor when re-entered.
 5. **No hard dependency on external services**; local desktop utility.

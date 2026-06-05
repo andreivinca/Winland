@@ -4,16 +4,20 @@
 
 Provide directional, spatial window navigation on top-level app windows and allow quick close of foreground window using Win-key combos.
 
+The navigator lives in **`winland-env`** (`WindowNavigator`) and is reached over the control pipe:
+`winland-keys` runs `winlandctl focus <dir>` / `winlandctl close`, and `winland-env`'s `Dispatcher`
+calls `WindowNavigator`.
+
 ## 2. Hotkeys
 
-Built-in mappings in `WinlandApp`:
-- `Win+Left` -> focus nearest window to the left
-- `Win+Up` -> focus nearest window above
-- `Win+Right` -> focus nearest window to the right
-- `Win+Down` -> focus nearest window below
-- `Win+W` -> close foreground window (`WM_CLOSE`)
+Defined as `config.conf` binds (not hardcoded), each running a `winlandctl` verb:
+- `Win+Left` → `winlandctl focus left` → focus nearest window to the left
+- `Win+Up` → `winlandctl focus up` → focus nearest window above
+- `Win+Right` → `winlandctl focus right` → focus nearest window to the right
+- `Win+Down` → `winlandctl focus down` → focus nearest window below
+- `Win+W` → `winlandctl close` → close foreground window (`WM_CLOSE`)
 
-These are plain Win combos (no Shift/Alt/Ctrl).
+These ship as plain Win combos (no Shift/Alt/Ctrl).
 
 ## 3. Directional Focus Algorithm
 

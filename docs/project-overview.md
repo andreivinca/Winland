@@ -2,73 +2,107 @@
 
 ## 1. What Winland Is
 
-Winland is a Windows tray application that provides keyboard-centric desktop workflow features inspired by tiling window manager ergonomics.
+Winland brings keyboard-centric, tiling-WM-style desktop ergonomics to Windows 11. It is **three
+cooperating tray/CLI processes**, not a single app:
+
+- **`winland-keys`** — the hotkey daemon. Owns one global keyboard hook and runs the command bound to
+  each Super (Win) combo.
+- **`winland-env`** — the environment service ("window manager"): per-monitor workspaces, directional
+  window focus, and the numbered tray icon. Has no keyboard hook; it is driven over a control pipe.
+- **`winlandctl`** — a one-shot CLI that forwards a single command to `winland-env` over its pipe.
 
 Current core capabilities:
 - Per-monitor numbered workspaces (`1..9`)
-- Directional nearest-window focus (`Win+Arrows`)
+- Directional nearest-window focus (`Win+Arrows`) and foreground close (`Win+W`)
 - Configurable app shortcuts from text config (`config.conf`)
 
 ## 2. Primary Goals
 
 - Reduce context-switch friction for keyboard-first users.
 - Make multi-monitor workspace behavior deterministic.
-- Keep customization simple through text configuration and script verbs.
+- Keep customization simple through text configuration and script/CLI verbs.
+- Keep the keyboard hook in a tiny, crash-isolated process, and expose the window manager as a
+  scriptable control surface (`winlandctl`).
 
 ## 3. Runtime Experience
 
-- App starts into the system tray.
-- Global Win-key combos are intercepted and resolved to actions.
-- Tray menu offers status, config reload/open, and exit.
-- Tray icon displays workspace currently shown on primary monitor.
+- Both daemons start into the system tray (each has its own icon on the primary taskbar).
+- `winland-keys` intercepts Super combos and runs each combo's configured command.
+- For workspace/focus combos that command is `winlandctl <verb>`, which reaches `winland-env`.
+- `winland-env`'s tray icon displays the workspace currently shown on the primary monitor.
 
-## 4. Feature Summary
+## 4. The Super-key flow
 
-### 4.1 Workspaces
-- `Win+1..9` switches/focuses workspace.
+```
+Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  winlandctl  →  pipe  →  winland-env
+```
+
+`winland-keys` resolves the combo to its bound command and runs it; nothing about workspaces lives in
+the keys daemon. `winland-env` only ever acts on commands that arrive on its pipe.
+
+## 5. Feature Summary
+
+### 5.1 Workspaces
+- `Win+1..9` switches/focuses a workspace (`winlandctl workspace N`).
 - Workspaces are pinned to a home monitor after first use.
-- `Win+Shift+W` releases current workspace from active monitor.
+- `Win+Shift+W` releases the current workspace from its monitor (`winlandctl workspace-release`).
 
-### 4.2 Window Focus
-- `Win+Left/Up/Right/Down` focuses nearest candidate window by direction.
-- `Win+W` sends close request to foreground window.
+### 5.2 Window Focus
+- `Win+Left/Up/Right/Down` focuses the nearest candidate window by direction
+  (`winlandctl focus <dir>`).
+- `Win+W` sends a close request to the foreground window (`winlandctl close`).
 
-### 4.3 App Shortcuts
+### 5.3 App Shortcuts
 - User-defined `bind = ...` lines in `config.conf`.
-- Supports modifiers and key names.
-- Actions can launch commands or invoke script verbs (`<verb>.ps1`).
-- Default config re-registers selected Windows shell shortcuts (for example `Win+D` via `show-desktop.ps1`).
+- Supports modifiers and key names; `SUPER` is required.
+- A bind's command resolves at run time: a `<verb>.ps1` script, a sibling `<verb>.exe` (this is how
+  `winlandctl` is found), or a plain shell command.
+- The workspace/focus/close combos are themselves ordinary binds (their command is `winlandctl …`) —
+  not reserved built-ins — so they can be rebound or removed.
 
-## 5. Tech Stack
+## 6. Tech Stack
 
-- C# / .NET 10 (`net10.0-windows`)
-- WinForms for app context + tray UI
+- C# / .NET 10 (`net10.0-windows` for the two WinForms daemons; `net10.0` for the `winlandctl` CLI)
+- WinForms for the tray UI and UI-thread message pumps
 - Win32/DWM interop for hooks, monitor/window operations, and focus behavior
+- A local **named pipe** (`\\.\pipe\winland-env`) as the control channel between `winlandctl` and
+  `winland-env`
 - PowerShell scripts for extensible launcher actions
 
-## 6. Configuration and Assets
+## 7. Configuration and Assets
 
-Files packaged next to executable:
+Files packaged next to `winland-keys.exe`:
 - `config.conf`
-- `launch-or-focus.ps1`
-- `launch-web.ps1`
-- `show-desktop.ps1`
+- `launch-or-focus.ps1`, `launch-web.ps1`, `show-desktop.ps1`
+- `winlandctl.exe` (copied beside the keys daemon by its build, so binds can run it)
 
 Config model:
 - Global key-value lines (`keyword = value`)
 - Shortcut bindings consumed from `bind` entries
 
-## 7. Repository/Code Orientation
+## 8. Starting Winland
 
-Main code areas:
-- `Winland/WinlandApp.cs` – app orchestration and action routing
-- `Winland/KeyboardHook.cs` – global Win-key hook and dispatch
-- `Winland/Workspaces/WorkspaceManager.cs` – workspace engine
-- `Winland/WindowFocus/WindowNavigator.cs` – directional focus/close
-- `Winland/AppShortcuts/` – bind parser, launcher, scripts
-- `Winland/UI/TrayIcon.cs` – tray UX
+Both daemons must run, both elevated (UIPI + the elevated control pipe require it).
 
-## 8. Documentation Index
+- **Packaged:** double-click `dist/start-winland.cmd` (or run `start-winland.ps1`). One UAC prompt;
+  it stops old instances and starts both. `-Stop` stops them. Tracked source in `packaging/`.
+- **From source:** `run.ps1` at the repo root (stop → build → start). `install-autostart.ps1`
+  registers both daemons as logon Scheduled Tasks (elevated, no UAC at sign-in).
+
+## 9. Repository / Code Orientation
+
+```
+src/Winland.Common/   Ipc.cs, Log.cs                       shared pipe protocol + logging
+src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          hotkey daemon (the only keyboard hook)
+                      Config.cs, HotkeyConfig.cs,
+                      AppLauncher.cs, WindowsHotkeyDisabler.cs, KeysTray.cs
+src/winland-env/      EnvApp.cs, DispatchServer.cs,         environment service (pipe-driven)
+                      UiInvoker.cs, Dispatcher.cs,
+                      WorkspaceManager.cs, WindowNavigator.cs, TrayIcon.cs
+src/winlandctl/       Program.cs                            control CLI (one-shot)
+```
+
+## 10. Documentation Index
 
 For detailed requirements and internals:
 - `docs/requirements/business-requirements.md`

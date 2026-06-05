@@ -21,17 +21,21 @@ This folder contains the baseline project documentation for future contributors 
 
 ## Scope
 
-These documents describe the current implementation in the `Winland` project (Windows tray app targeting `net10.0-windows` with WinForms and Win32 interop) and define requirements for maintaining/extending current behavior.
+These documents describe the current implementation: **three cooperating processes** under `src/`
+(`winland-keys`, `winland-env`, `winlandctl`) plus the shared `Winland.Common` library. The two
+daemons target `net10.0-windows` (WinForms + Win32 interop); `winlandctl` targets `net10.0`.
 
 ## Source of Truth
 
 When docs and code conflict, current code is authoritative unless an explicit requirement in this folder states intended future behavior.
 
 Primary implementation references:
-- `Winland/WinlandApp.cs`
-- `Winland/KeyboardHook.cs`
-- `Winland/Workspaces/WorkspaceManager.cs`
-- `Winland/WindowFocus/WindowNavigator.cs`
-- `Winland/AppShortcuts/HotkeyConfig.cs`
-- `Winland/AppShortcuts/AppLauncher.cs`
-- `Winland/config.conf`
+- `src/winland-keys/KeysApp.cs` — hotkey daemon root
+- `src/winland-keys/KeyboardHook.cs` — the global Win-key hook
+- `src/winland-keys/AppLauncher.cs`, `HotkeyConfig.cs`, `Config.cs` — binds + command execution
+- `src/winland-keys/config.conf` — shipped shortcut bindings
+- `src/Winland.Common/Ipc.cs` — control-pipe protocol (shared)
+- `src/winlandctl/Program.cs` — the control CLI
+- `src/winland-env/EnvApp.cs`, `DispatchServer.cs`, `UiInvoker.cs`, `Dispatcher.cs` — pipe-driven service
+- `src/winland-env/WorkspaceManager.cs` — per-monitor workspaces
+- `src/winland-env/WindowNavigator.cs` — directional focus + close

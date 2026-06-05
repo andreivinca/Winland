@@ -4,12 +4,18 @@
 
 Provide deterministic, per-monitor workspace management where each monitor displays one workspace at a time and workspace windows are restored/minimized as users switch contexts.
 
+Workspaces live in the **`winland-env`** service. They are driven over the control pipe: the
+`winland-keys` daemon runs the bind `winlandctl workspace N`, `winlandctl` forwards `workspace N` to
+`winland-env`, and the `Dispatcher` calls into `WorkspaceManager`. The keys daemon itself has no
+workspace logic. (See `architecture-overview.md`.)
+
 ## 2. Primary User Flows
 
 ### 2.1 Switch to Workspace N (`Win+1..9`)
 1. User presses Win+N.
-2. `WinlandApp` resolves action id to workspace switch.
-3. `WorkspaceManager.SwitchFocusedMonitorTo(N)` executes.
+2. `winland-keys` runs the matching bind's command, `winlandctl workspace N`.
+3. `winlandctl` sends `workspace N` over the pipe; `winland-env`'s `Dispatcher` calls
+   `WorkspaceManager.SwitchFocusedMonitorTo(N)`.
 4. Workspace home monitor is resolved:
    - Existing home: use it.
    - No home: pin to monitor under cursor.
@@ -22,6 +28,7 @@ Provide deterministic, per-monitor workspace management where each monitor displ
    - Focus workspace N target window.
 
 ### 2.2 Release Current Workspace (`Win+Shift+W`)
+0. `winland-keys` runs `winlandctl workspace-release`; `winland-env` calls `ReleaseCurrentWorkspace()`.
 1. Active monitor determined from cursor position.
 2. Current workspace on that monitor is minimized away.
 3. Workspace home binding removed.

@@ -30,4 +30,24 @@
     </None>
   </ItemGroup>
 
+  <!--
+    The Super+number / focus / close / release binds run "winlandctl <verb>", which AppLauncher
+    resolves to a winlandctl.exe sitting NEXT TO this daemon. Build winlandctl and copy its whole
+    output (apphost .exe + .dll + runtimeconfig/deps) beside winland-keys.exe, so those binds work
+    when running straight from this project's build folder — not only from a hand-assembled dist.
+  -->
+  <Target Name="CopyWinlandctl" AfterTargets="Build">
+    <MSBuild Projects="..\winlandctl\winlandctl.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_WinlandctlPrimaryOutput" />
+    </MSBuild>
+    <ItemGroup>
+      <_WinlandctlFiles Include="%(_WinlandctlPrimaryOutput.RootDir)%(_WinlandctlPrimaryOutput.Directory)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_WinlandctlFiles)"
+          DestinationFiles="@(_WinlandctlFiles->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

@@ -2,7 +2,7 @@
 
 ## 1. Objective
 
-Allow users to define custom Win-key shortcuts in `config.conf` that launch apps/commands or invoke shipped/custom PowerShell script verbs.
+Allow users to define custom Win-key shortcuts in `config.conf` that launch apps/commands or invoke shipped/custom PowerShell script verbs. This is the `winland-keys` daemon's only job: map each Super combo to a command and run it. The workspace/focus combos are themselves binds whose command is `winlandctl <verb>`.
 
 ## 2. Configuration Model
 
@@ -58,15 +58,23 @@ Entry point: `AppLauncher.Run(BindAction)`.
 ### 4.2 Script Mode
 If `<baseDir>/<verb>.ps1` exists:
 - Launch:
-  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "<script>" <args>`
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '<script>' <args>"`
+  - `-Command` (not `-File`) is used so a `--` token in the bind passes the rest through verbatim,
+    including dash-prefixed args; the script path is single-quoted (and any `'` doubled).
 - Uses `UseShellExecute=false`, `CreateNoWindow=true`.
 
-### 4.3 Command Mode
-If no matching script file exists:
-- Execute `verb` + `args` directly with shell execution.
+### 4.3 Sibling Exe Mode
+Else if `<baseDir>/<verb>.exe` exists:
+- Run it directly with `args` (`UseShellExecute=false`, `CreateNoWindow=true`).
+- **This is how `winlandctl` is found.** As a child of the elevated keys daemon it inherits
+  elevation, so it can reach `winland-env`'s pipe.
 
-### 4.4 Failure Policy
-All launch errors are swallowed to preserve core app stability.
+### 4.4 Command Mode
+If neither a script nor a sibling exe matches:
+- Execute the whole line directly with shell execution (`UseShellExecute=true`).
+
+### 4.5 Failure Policy
+All launch errors are swallowed to preserve daemon stability.
 
 ## 5. Bundled Script Verbs
 
@@ -108,16 +116,20 @@ Behavior summary:
 - Skips non-eligible windows (hidden, already minimized, owned/tool windows, shell desktop/taskbar classes, cloaked, untitled).
 - Minimizes eligible windows via `ShowWindow(..., SW_MINIMIZE)`.
 
-## 6. Interaction with Built-in Actions
+## 6. No Built-in Actions / Bind Precedence
 
-- Built-in actions are resolved before config binds.
-- If user defines bind that conflicts with built-in combo, built-in wins.
+- There are no hardcoded built-in combos. Workspaces, arrows, close, and release are all ordinary
+  binds whose command is `winlandctl <verb>`, so they can be rebound or removed like any other.
+- On a key-down, the **first** bind in file order matching `(vk + modifiers)` wins. If two binds
+  share a combo, the earlier line is used.
 
 ## 7. Operational Considerations
 
-- Config reload is manual via tray menu (`Reload config`).
-- Scripts are expected next to executable (copied from project during build).
+- Config reload is manual via the `winland-keys` tray menu (`Reload config`).
+- Scripts and `winlandctl.exe` are expected next to `winland-keys.exe` (copied during build).
 - Execution policy bypass increases flexibility but expands trust assumptions.
+- Workspace/focus binds require `winland-env` to be running; otherwise `winlandctl` exits with code
+  `3` (and the action silently does nothing). Other binds work whenever `winland-keys` runs.
 
 ## 8. Extension Guidance
 
