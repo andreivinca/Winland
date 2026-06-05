@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using Winland.Common;
 
-namespace Winland;
+namespace Winland.Env;
 
 /// <summary>
 /// Per-monitor workspaces. Each workspace is pinned to a "home" monitor (the monitor it was first

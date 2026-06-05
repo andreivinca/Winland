@@ -3,12 +3,13 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Winland;
+namespace Winland.Env;
 
 /// <summary>
 /// The system-tray presence: a NotifyIcon whose icon is a white circle with the active workspace
-/// number, a right-click menu (Status / Reload config / Open config / Exit), balloon tips, and the
-/// status dialog. Menu actions are surfaced as callbacks; everything WinForms/GDI lives here.
+/// number, a right-click menu (Status / [Reload config] / [Open config] / Exit), balloon tips, and the
+/// status dialog. The config items appear only when their callbacks are supplied — the environment has
+/// no config, so it passes null. Everything WinForms/GDI lives here.
 /// </summary>
 internal sealed class TrayIcon : IDisposable
 {
@@ -20,7 +21,7 @@ internal sealed class TrayIcon : IDisposable
     private IntPtr _currentIconHandle;
     private int _shownWorkspace = -1;
 
-    public TrayIcon(Func<string> statusText, Action onReloadConfig, Action onOpenConfig, Action onExit)
+    public TrayIcon(Func<string> statusText, Action? onReloadConfig, Action? onOpenConfig, Action onExit)
     {
         _statusText = statusText;
         _menu = BuildMenu(onReloadConfig, onOpenConfig, onExit);
@@ -95,27 +96,37 @@ internal sealed class TrayIcon : IDisposable
         }
     }
 
-    private ContextMenuStrip BuildMenu(Action onReloadConfig, Action onOpenConfig, Action onExit)
+    private ContextMenuStrip BuildMenu(Action? onReloadConfig, Action? onOpenConfig, Action onExit)
     {
         var menu = new ContextMenuStrip();
 
         var statusItem = new ToolStripMenuItem("Status");
         statusItem.Click += (_, _) => ShowStatus();
 
-        var reloadItem = new ToolStripMenuItem("Reload config");
-        reloadItem.Click += (_, _) => onReloadConfig();
+        menu.Items.Add(statusItem);
+        menu.Items.Add(new ToolStripSeparator());
 
-        var openConfigItem = new ToolStripMenuItem("Open config");
-        openConfigItem.Click += (_, _) => onOpenConfig();
+        if (onReloadConfig != null)
+        {
+            var reloadItem = new ToolStripMenuItem("Reload config");
+            reloadItem.Click += (_, _) => onReloadConfig();
+            menu.Items.Add(reloadItem);
+        }
+
+        if (onOpenConfig != null)
+        {
+            var openConfigItem = new ToolStripMenuItem("Open config");
+            openConfigItem.Click += (_, _) => onOpenConfig();
+            menu.Items.Add(openConfigItem);
+        }
+
+        if (onReloadConfig != null || onOpenConfig != null)
+        {
+            menu.Items.Add(new ToolStripSeparator());
+        }
 
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => onExit();
-
-        menu.Items.Add(statusItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(reloadItem);
-        menu.Items.Add(openConfigItem);
-        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
         return menu;

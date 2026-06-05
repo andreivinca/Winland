@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace Winland;
+namespace Winland.Keys;
 
 /// <summary>One non-comment config line, split into its keyword and the raw value after the '='.</summary>
 internal sealed record ConfigEntry(string Keyword, string Value);

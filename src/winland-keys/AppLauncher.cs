@@ -2,12 +2,12 @@ using System;
 using System.Diagnostics;
 using System.IO;
 
-namespace Winland;
+namespace Winland.Keys;
 
 /// <summary>
-/// Feature: run a configured app shortcut. If the action's first token names a "&lt;verb&gt;.ps1"
-/// script next to the exe, it runs that script with the remaining arguments; otherwise the whole
-/// line is executed as a command. See HotkeyConfig for the bind grammar.
+/// Feature: run a configured app shortcut. The action's first token (verb) is resolved next to the exe
+/// as: "&lt;verb&gt;.ps1" script → "&lt;verb&gt;.exe" sibling (e.g. winlandctl) → otherwise the whole line
+/// is run as a shell command. See HotkeyConfig for the bind grammar.
 /// </summary>
 internal static class AppLauncher
 {
@@ -21,7 +21,9 @@ internal static class AppLauncher
                 return;
             }
 
-            string script = Path.Combine(AppContext.BaseDirectory, verb + ".ps1");
+            string baseDir = AppContext.BaseDirectory;
+
+            string script = Path.Combine(baseDir, verb + ".ps1");
             if (File.Exists(script))
             {
                 // Invoke via -Command (not -File) so PowerShell parses the arguments: this lets a "--"
@@ -35,11 +37,24 @@ internal static class AppLauncher
                     UseShellExecute = false,
                     CreateNoWindow = true
                 });
+                return;
             }
-            else
+
+            // A sibling "<verb>.exe" (e.g. winlandctl) runs directly — no PATH setup needed, and as a
+            // child of this (elevated) daemon it inherits elevation, so it can reach winland-env's pipe.
+            string siblingExe = Path.Combine(baseDir, verb + ".exe");
+            if (File.Exists(siblingExe))
             {
-                Process.Start(new ProcessStartInfo(verb, args) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(siblingExe, args)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                return;
             }
+
+            // Otherwise run the whole line as a shell command (firefox, explorer.exe, a URI, …).
+            Process.Start(new ProcessStartInfo(verb, args) { UseShellExecute = true });
         }
         catch
         {

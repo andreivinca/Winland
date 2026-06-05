@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using Microsoft.Win32;
 
-namespace Winland;
+namespace Winland.Keys;
 
 /// <summary>
 /// Feature: turn off Windows' own Win+&lt;key&gt; hotkeys so the shell can't act on combos Winland owns

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Winland;
+namespace Winland.Keys;
 
 [Flags]
 internal enum BindModifiers
@@ -156,6 +156,13 @@ internal static class HotkeyConfig
             case "DOT": vk = 0xBE; return true;
         }
 
+        if (name.Length == 7 && name.StartsWith("NUMPAD", StringComparison.Ordinal)
+            && name[6] >= '0' && name[6] <= '9')
+        {
+            vk = 0x60 + (name[6] - '0'); // VK_NUMPAD0 = 0x60
+            return true;
+        }
+
         if (name.Length >= 2 && name[0] == 'F' && int.TryParse(name[1..], out int n) && n >= 1 && n <= 24)
         {
             vk = 0x70 + (n - 1); // VK_F1 = 0x70
@@ -165,5 +172,5 @@ internal static class HotkeyConfig
         return false;
     }
 
-    private static void Log(string message) => Winland.Log.Line(message);
+    private static void Log(string message) => Winland.Common.Log.Line(message);
 }

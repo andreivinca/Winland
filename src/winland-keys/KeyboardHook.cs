@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace Winland;
+namespace Winland.Keys;
 
 /// <summary>
 /// Shared "hotkey register": a global low-level keyboard hook (WH_KEYBOARD_LL) running on its own

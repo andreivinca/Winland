@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Winland;
+namespace Winland.Env;
 
 internal enum Direction
 {

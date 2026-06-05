@@ -1,14 +1,13 @@
 using System;
 using System.IO;
 
-namespace Winland;
+namespace Winland.Common;
 
 /// <summary>
-/// Minimal append-only diagnostic log. Writes to "winland-hooklog.txt" next to the executable
-/// (the same location convention as <see cref="Config.DefaultPath"/>). All failures are swallowed —
-/// logging must never affect the hotkey workflow.
+/// Minimal append-only diagnostic log, written to "winland-hooklog.txt" next to the executable. Shared
+/// by every Winland process. All failures are swallowed — logging must never affect the workflow.
 /// </summary>
-internal static class Log
+public static class Log
 {
     private static readonly string LogPath = Path.Combine(AppContext.BaseDirectory, "winland-hooklog.txt");
 

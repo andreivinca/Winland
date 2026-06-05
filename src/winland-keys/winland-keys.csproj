@@ -1,4 +1,3 @@
-﻿
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
@@ -8,20 +7,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.0</Version>
+    <AssemblyName>winland-keys</AssemblyName>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
-    <None Update="AppShortcuts\launch-or-focus.ps1">
-      <TargetPath>launch-or-focus.ps1</TargetPath>
+    <ProjectReference Include="..\Winland.Common\Winland.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="launch-or-focus.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="AppShortcuts\launch-web.ps1">
-      <TargetPath>launch-web.ps1</TargetPath>
+    <None Update="launch-web.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="AppShortcuts\show-desktop.ps1">
-      <TargetPath>show-desktop.ps1</TargetPath>
+    <None Update="show-desktop.ps1">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="config.conf">
