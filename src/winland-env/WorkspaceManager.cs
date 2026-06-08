@@ -79,14 +79,9 @@ internal sealed class WorkspaceManager : IDisposable
         _winEventHooks.Clear();
     }
 
-    /// <summary>Scan monitors and (non-minimized) windows, assigning each to its monitor's workspace.</summary>
-    private void Rebuild()
+    /// <summary>Enumerate physical monitors, left-to-right, as fresh states (Current = 0).</summary>
+    private List<MonitorState> EnumerateMonitors()
     {
-        _monitors.Clear();
-        _windowWorkspace.Clear();
-        _lastActive.Clear();
-        _workspaceHome.Clear();
-
         var found = new List<MonitorState>();
         EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr hMon, IntPtr hdc, ref RECT rect, IntPtr data) =>
         {
@@ -105,7 +100,18 @@ internal sealed class WorkspaceManager : IDisposable
         }, IntPtr.Zero);
 
         // Order left-to-right (leftmost monitor = workspace 1).
-        var ordered = found.OrderBy(m => m.Work.Left).ThenBy(m => m.Work.Top).ToList();
+        return found.OrderBy(m => m.Work.Left).ThenBy(m => m.Work.Top).ToList();
+    }
+
+    /// <summary>Scan monitors and (non-minimized) windows, assigning each to its monitor's workspace.</summary>
+    private void Rebuild()
+    {
+        _monitors.Clear();
+        _windowWorkspace.Clear();
+        _lastActive.Clear();
+        _workspaceHome.Clear();
+
+        List<MonitorState> ordered = EnumerateMonitors();
         for (int i = 0; i < ordered.Count; i++)
         {
             MonitorState m = ordered[i];
@@ -129,6 +135,59 @@ internal sealed class WorkspaceManager : IDisposable
     }
 
     /// <summary>
+    /// Reconcile the cached monitor map with the current display configuration. HMONITOR handles are
+    /// only valid until the display setup changes (resolution, sleep/wake, dock/undock, driver reset);
+    /// afterwards the cached handles go stale and every "is this window on this monitor" test fails —
+    /// so a Win+N switch updates <see cref="MonitorState.Current"/> but minimizes/restores nothing. We
+    /// re-enumerate and carry each monitor's workspace (and any workspace homes) across by position, so
+    /// the handles we compare against are always live. Called before each switch/release.
+    /// </summary>
+    private void RefreshMonitors()
+    {
+        List<MonitorState> current = EnumerateMonitors();
+        if (current.Count == 0)
+        {
+            return; // transient empty enumeration — keep what we had rather than wipe state
+        }
+
+        var remap = new Dictionary<IntPtr, IntPtr>(); // stale handle -> current handle
+
+        foreach (MonitorState m in current)
+        {
+            // Match a previous monitor by position (the work area's top-left is stable across a handle
+            // reissue) so its current workspace carries over to the live handle.
+            MonitorState? prev = _monitors.Values.FirstOrDefault(
+                p => p.Work.Left == m.Work.Left && p.Work.Top == m.Work.Top);
+            if (prev != null)
+            {
+                m.Current = prev.Current;
+                if (prev.Handle != m.Handle)
+                {
+                    remap[prev.Handle] = m.Handle;
+                }
+            }
+        }
+
+        _monitors.Clear();
+        foreach (MonitorState m in current)
+        {
+            _monitors[m.Handle] = m;
+        }
+
+        // Repoint workspace homes whose monitor handle was reissued.
+        if (remap.Count > 0)
+        {
+            foreach (int ws in _workspaceHome.Keys.ToList())
+            {
+                if (remap.TryGetValue(_workspaceHome[ws], out IntPtr live))
+                {
+                    _workspaceHome[ws] = live;
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Handle Win+<paramref name="k"/> (1..9). Each workspace is linked to a home monitor — set the
     /// first time it's entered, to the monitor under the mouse cursor. Win+k always acts on k's home
     /// monitor: if k is already shown there, focus it; otherwise put away that monitor's apps and show
@@ -136,7 +195,13 @@ internal sealed class WorkspaceManager : IDisposable
     /// </summary>
     public void SwitchFocusedMonitorTo(int k)
     {
-        if (k < 1 || k > WorkspaceCount || _monitors.Count == 0)
+        if (k < 1 || k > WorkspaceCount)
+        {
+            return;
+        }
+
+        RefreshMonitors(); // keep monitor handles live across display-config changes
+        if (_monitors.Count == 0)
         {
             return;
         }
@@ -191,6 +256,7 @@ internal sealed class WorkspaceManager : IDisposable
     /// </summary>
     public void ReleaseCurrentWorkspace()
     {
+        RefreshMonitors(); // keep monitor handles live across display-config changes
         MonitorState? m = GetActiveMonitor();
         if (m == null || m.Current < 1)
         {
