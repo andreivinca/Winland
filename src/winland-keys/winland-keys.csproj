@@ -37,9 +37,15 @@
     when running straight from this project's build folder — not only from a hand-assembled dist.
   -->
   <Target Name="CopyWinlandctl" AfterTargets="Build">
+    <!--
+      Build winlandctl framework-dependent (its own net10.0, no RID). RemoveProperties drops any
+      RuntimeIdentifier/self-contained flags inherited from a `dotnet publish -r ...` of this project,
+      which winlandctl isn't restored for and would otherwise fail on.
+    -->
     <MSBuild Projects="..\winlandctl\winlandctl.csproj"
              Targets="Build"
-             Properties="Configuration=$(Configuration)">
+             Properties="Configuration=$(Configuration)"
+             RemoveProperties="RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile;PublishReadyToRun;PublishTrimmed">
       <Output TaskParameter="TargetOutputs" ItemName="_WinlandctlPrimaryOutput" />
     </MSBuild>
     <ItemGroup>
