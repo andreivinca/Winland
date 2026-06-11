@@ -8,8 +8,8 @@ namespace Winland.Keys;
 
 /// <summary>
 /// Shared "hotkey register": a global low-level keyboard hook (WH_KEYBOARD_LL) running on its own
-/// dedicated thread. It tracks the Win key (passed through so Start menu / unclaimed combos still work),
-/// and for each other key-down asks a resolver whether the combo is claimed; if so it swallows the key,
+/// dedicated thread. It is stateless: on each key-down it asks the OS whether the Win key is
+/// physically held right now, then asks a resolver whether the combo is claimed; if so it swallows the key,
 /// injects a dummy 0xFF keystroke (so the Start menu doesn't pop when Win is used as a modifier), and
 /// dispatches the matched action id on the UI thread via a hidden message window.
 ///
@@ -19,9 +19,7 @@ internal sealed class KeyboardHook : IDisposable
 {
     private const int WH_KEYBOARD_LL = 13;
     private const int WM_KEYDOWN = 0x0100;
-    private const int WM_KEYUP = 0x0101;
     private const int WM_SYSKEYDOWN = 0x0104;
-    private const int WM_SYSKEYUP = 0x0105;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint WM_QUIT = 0x0012;
 
@@ -40,7 +38,6 @@ internal sealed class KeyboardHook : IDisposable
     private readonly Thread _thread;
     private uint _threadId;
     private IntPtr _hookHandle;
-    private bool _winDown;
 
     public KeyboardHook(Func<int, bool, bool, bool, int> resolve, Action<int> dispatch)
     {
@@ -115,29 +112,18 @@ internal sealed class KeyboardHook : IDisposable
 
         int msg = wParam.ToInt32();
         bool isDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-        bool isUp = msg == WM_KEYUP || msg == WM_SYSKEYUP;
         int vk = (int)data.vkCode;
 
         if (vk == VK_LWIN || vk == VK_RWIN)
         {
-            if (isDown)
-            {
-                _winDown = true;
-            }
-            else if (isUp)
-            {
-                _winDown = false;
-            }
-
             // Let the Win key itself flow through so Start menu / other combos still work.
             return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
         }
 
         if (isDown)
         {
-            // Track flag plus live physical state so a missed Win-down doesn't matter.
-            bool winHeld = _winDown
-                || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0
+            // No remembered state: ask the OS whether Win is physically held right now.
+            bool winHeld = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0
                 || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
 
             if (winHeld)
