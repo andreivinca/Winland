@@ -40,7 +40,7 @@ internal sealed class EnvApp : ApplicationContext
     private string BuildStatusText() =>
         "Winland environment is running.\n\n" +
         "Driven by winlandctl over the control pipe:\n" +
-        "  winlandctl workspace 1..9\n" +
+        "  winlandctl workspace <n>   (any whole number >= 1)\n" +
         "  winlandctl focus left|right|up|down\n" +
         "  winlandctl close\n" +
         "  winlandctl workspace-release";

@@ -25,12 +25,12 @@ internal sealed class Dispatcher
         switch (verb)
         {
             case "workspace":
-                if (int.TryParse(args, out int n) && n >= 1 && n <= WorkspaceManager.WorkspaceCount)
+                if (int.TryParse(args, out int n) && n >= 1)
                 {
                     _workspaces.SwitchFocusedMonitorTo(n);
                     return Ipc.Ok;
                 }
-                return $"{Ipc.ErrPrefix} workspace expects 1..{WorkspaceManager.WorkspaceCount}";
+                return $"{Ipc.ErrPrefix} workspace expects a whole number >= 1";
 
             case "workspace-release":
                 _workspaces.ReleaseCurrentWorkspace();

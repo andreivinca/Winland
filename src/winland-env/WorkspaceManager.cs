@@ -17,8 +17,6 @@ namespace Winland.Env;
 /// </summary>
 internal sealed class WorkspaceManager : IDisposable
 {
-    public const int WorkspaceCount = 9;
-
     private sealed class MonitorState
     {
         public IntPtr Handle;
@@ -27,7 +25,7 @@ internal sealed class WorkspaceManager : IDisposable
         public int Current;
     }
 
-    // window handle -> workspace number (1..9). The single source of truth for membership.
+    // window handle -> workspace number (any integer >= 1). The single source of truth for membership.
     private readonly Dictionary<IntPtr, int> _windowWorkspace = new();
     // workspace -> most recently focused window (used to restore focus after a switch).
     private readonly Dictionary<int, IntPtr> _lastActive = new();
@@ -115,7 +113,7 @@ internal sealed class WorkspaceManager : IDisposable
         for (int i = 0; i < ordered.Count; i++)
         {
             MonitorState m = ordered[i];
-            m.Current = Math.Min(i + 1, WorkspaceCount);
+            m.Current = i + 1; // leftmost monitor = workspace 1, next = 2, ...
             _monitors[m.Handle] = m;
             _workspaceHome[m.Current] = m.Handle;
         }
@@ -188,14 +186,15 @@ internal sealed class WorkspaceManager : IDisposable
     }
 
     /// <summary>
-    /// Handle Win+<paramref name="k"/> (1..9). Each workspace is linked to a home monitor — set the
+    /// Handle a switch to workspace <paramref name="k"/> (any integer >= 1). Each workspace is linked
+    /// to a home monitor — set the
     /// first time it's entered, to the monitor under the mouse cursor. Win+k always acts on k's home
     /// monitor: if k is already shown there, focus it; otherwise put away that monitor's apps and show
     /// k (empty the first time). Other monitors are untouched.
     /// </summary>
     public void SwitchFocusedMonitorTo(int k)
     {
-        if (k < 1 || k > WorkspaceCount)
+        if (k < 1)
         {
             return;
         }

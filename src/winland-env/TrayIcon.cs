@@ -66,13 +66,16 @@ internal sealed class TrayIcon : IDisposable
                 g.FillEllipse(bg, 1, 1, 30, 30);
 
                 using var fg = new SolidBrush(Color.Black);
-                using var font = new Font("Segoe UI", 19, FontStyle.Bold, GraphicsUnit.Pixel);
+                // Shrink the glyph so multi-digit workspace numbers still fit the 32px circle.
+                string text = workspace.ToString();
+                float emSize = text.Length switch { <= 1 => 19f, 2 => 14f, _ => 10f };
+                using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
                 using var format = new StringFormat
                 {
                     Alignment = StringAlignment.Center,
                     LineAlignment = StringAlignment.Center
                 };
-                g.DrawString(workspace.ToString(), font, fg, new RectangleF(0, 0, 32, 33), format);
+                g.DrawString(text, font, fg, new RectangleF(0, 0, 32, 33), format);
             }
 
             IntPtr hIcon = bmp.GetHicon();
