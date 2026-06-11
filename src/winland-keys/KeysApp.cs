@@ -1,20 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Windows.Forms;
+using Winland.Common;
 
 namespace Winland.Keys;
 
 /// <summary>
-/// Root of the keys daemon: a tray-resident hotkey mapper. It owns the keyboard hook and the config,
-/// and does nothing more than run each configured Super (Win) combo's command line (via AppLauncher).
-/// It has no workspace or focus logic — those live in winland-env and are driven through winlandctl.
+/// Root of the keys daemon: a headless (no tray icon) hotkey mapper. It owns the keyboard hook and the
+/// config, and does nothing more than run each configured Super (Win) combo's command line (via
+/// AppLauncher). It has no workspace or focus logic — those live in winland-env, driven through
+/// winlandctl. It shows no UI; stop it with the start script (start-winland -Stop) or Task Manager.
 /// </summary>
-internal sealed class KeysApp : ApplicationContext
+internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
 {
-    private readonly KeysTray _tray;
     private readonly KeyboardHook _hook;
-    private readonly string _configPath;
     private List<KeyBind> _binds;
     private bool _disposed;
 
@@ -27,37 +25,12 @@ internal sealed class KeysApp : ApplicationContext
         // back on the UI thread.
         _hook = new KeyboardHook(ResolveActionId, HandleAction);
 
-        _configPath = Config.DefaultPath;
-        _binds = HotkeyConfig.Parse(Config.Load(_configPath));
+        _binds = HotkeyConfig.Parse(Config.Load(Config.DefaultPath));
 
-        _tray = new KeysTray(BuildStatusText, ReloadConfig, OpenConfig, ExitApplication);
-
-        _tray.ShowBalloon(_hook.Installed
-            ? $"Keys daemon running — {_binds.Count} shortcut(s). Super (Win) hotkeys are active."
-            : "Keys daemon running, but the keyboard hook failed to install.");
+        Log.Line(_hook.Installed
+            ? $"keys daemon running (headless) — {_binds.Count} shortcut(s); Super (Win) hotkeys active."
+            : "keys daemon running (headless), but the keyboard hook failed to install.");
     }
-
-    private void ReloadConfig()
-    {
-        _binds = HotkeyConfig.Parse(Config.Load(_configPath));
-        _tray.ShowBalloon($"Config reloaded — {_binds.Count} shortcut(s).", 1500);
-    }
-
-    private void OpenConfig()
-    {
-        try { Process.Start(new ProcessStartInfo(_configPath) { UseShellExecute = true }); }
-        catch { /* ignored */ }
-    }
-
-    private string BuildStatusText() =>
-        _hook.Installed
-            ? $"Winland keys daemon is running.\n\n{_binds.Count} shortcut(s) loaded from config.\n" +
-              "Each Super (Win) combo runs its configured command\n" +
-              "(e.g. winlandctl workspace 1, or launch-or-focus ...).\n\n" +
-              "Use the tray menu to open/reload the config."
-            : "Winland keys daemon is running, but the keyboard hook could not be installed.";
-
-    private void ExitApplication() => ExitThread();
 
     // Adapter for KeyboardHook: returns (bind index + 1) for a matching Win+combo, or 0 if unclaimed.
     private int ResolveActionId(int vk, bool shiftDown, bool altDown, bool ctrlDown)
@@ -99,7 +72,6 @@ internal sealed class KeysApp : ApplicationContext
         {
             _disposed = true;
             _hook.Dispose();
-            _tray.Dispose();
         }
 
         base.Dispose(disposing);
