@@ -14,3 +14,4 @@ dist/
 
 # Winland runtime debug log
 winland-hooklog.txt
+artifacts/
