@@ -12,7 +12,7 @@ cooperating tray/CLI processes**, not a single app:
 - **`winlandctl`** — a one-shot CLI that forwards a single command to `winland-env` over its pipe.
 
 Current core capabilities:
-- Per-monitor numbered workspaces (`1..9`)
+- Per-monitor numbered workspaces (unbounded; `1..9` bound by default)
 - Directional nearest-window focus (`Win+Arrows`) and foreground close (`Win+W`)
 - Configurable app shortcuts from text config (`config.conf`)
 
@@ -95,7 +95,7 @@ Both daemons must run, both elevated (UIPI + the elevated control pipe require i
 src/Winland.Common/   Ipc.cs, Log.cs                       shared pipe protocol + logging
 src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          hotkey daemon (the only keyboard hook)
                       Config.cs, HotkeyConfig.cs,
-                      AppLauncher.cs, WindowsHotkeyDisabler.cs, KeysTray.cs
+                      AppLauncher.cs, WindowsHotkeyDisabler.cs
 src/winland-env/      EnvApp.cs, DispatchServer.cs,         environment service (pipe-driven)
                       UiInvoker.cs, Dispatcher.cs,
                       WorkspaceManager.cs, WindowNavigator.cs, TrayIcon.cs

@@ -29,7 +29,7 @@
 ## 3. Core Technical Architecture
 
 - **`winland-keys`** — `Program.Main` (single-instance mutex) runs `KeysApp`, which composes
-  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher`, `WindowsHotkeyDisabler`, and `KeysTray`.
+  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher`, and `WindowsHotkeyDisabler`.
   It owns the only keyboard hook and has no workspace/focus logic.
 - **`winland-env`** — `Program.Main` runs `EnvApp`, which composes `WorkspaceManager`,
   `WindowNavigator` (static), `Dispatcher`, `UiInvoker`, `DispatchServer`, and `TrayIcon`. It has no
@@ -83,8 +83,8 @@
 - A malformed/broken connection must not kill the server.
 
 ### 5.3 Dispatcher verbs
-- `workspace <1..9>`, `workspace-release`, `focus <left|right|up|down>`, `close`; unknown verbs and
-  out-of-range arguments return `ERR …`.
+- `workspace <n>` (n >= 1), `workspace-release`, `focus <left|right|up|down>`, `close`; unknown verbs
+  and invalid arguments return `ERR …`.
 
 ### 5.4 Client (`winlandctl`)
 - Joins args into one command line, connects with a 2s timeout, writes the line, reads one reply.
@@ -93,7 +93,8 @@
 ## 6. Workspace System Requirements (`winland-env`)
 
 ### 6.1 Workspace Domain Model
-- Workspace count fixed at 9.
+- No fixed workspace count — any whole number >= 1. The shipped config binds 1..9, but a user can
+  bind any key to any number (e.g. `bind = SUPER F1, winlandctl workspace 10`).
 - Membership source of truth: `Dictionary<IntPtr,int> _windowWorkspace`.
 - Additional state: `_lastActive` (focus restoration), `_workspaceHome` (monitor pinning),
   `_monitors` (monitor state: `Current`, work area, primary flag).
@@ -175,11 +176,10 @@ Z-order predecessors; not minimized per its window placement.
 
 ## 9. Tray and UX Integration Requirements
 
-- Each daemon keeps a tray icon for its lifetime (both on the primary monitor's taskbar).
-- `winland-env` icon displays the primary monitor's workspace number and updates on relevant changes;
-  menu: Status, Exit.
-- `winland-keys` menu: Status, Reload config, Open config, Exit.
-- Startup and config-reload events present balloon notifications.
+- `winland-env` keeps a tray icon for its lifetime (primary monitor's taskbar): it displays the
+  primary monitor's workspace number and updates on relevant changes; menu: Status, Exit.
+- `winland-keys` is headless: no tray icon, menu, or balloons; startup status is written to the log.
+  Config changes are applied by restarting the daemon.
 
 ## 10. Elevation and Windows Shell Hotkey Conflict Requirements
 

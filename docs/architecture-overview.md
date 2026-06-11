@@ -58,13 +58,15 @@ For unclaimed combos (`actionId == 0`) the hook passes the key through to the OS
 ### 3.2 `KeysApp`
 - On startup sets the `NoWinKeys` policy (`WindowsHotkeyDisabler.EnsureDisabled`).
 - Loads `config.conf` (`Config.Load`) and parses binds (`HotkeyConfig.Parse`).
-- Owns the `KeyboardHook` (resolver + dispatcher callbacks) and the keys tray.
+- Owns the `KeyboardHook` (resolver + dispatcher callbacks). Headless — no tray icon; startup
+  status goes to the log.
 - `ResolveActionId` returns *(bind index + 1)* for a matching Super combo, or `0`.
 - `HandleAction` runs the matched bind via `AppLauncher.Run`.
 
 ### 3.3 `KeyboardHook`
 - Global low-level hook (`WH_KEYBOARD_LL`) on a dedicated STA thread with its own message loop.
-- Tracks Win key state; for each other key-down while Win is held, calls the resolver.
+- Stateless: on each key-down it queries the OS (`GetAsyncKeyState`) for the live Win key state and,
+  while Win is held, calls the resolver.
 - Swallows claimed combos and dispatches the action id to the UI thread via a hidden message window.
 
 ### 3.4 `AppLauncher`
@@ -105,7 +107,7 @@ It has **no keyboard hook**: every action originates from the pipe.
 ### 4.4 `Dispatcher`
 - The single source of truth for what the environment can do. Maps a verb to an operation and returns
   the protocol response:
-  - `workspace <1..9>` → `WorkspaceManager.SwitchFocusedMonitorTo`
+  - `workspace <n>` (n >= 1) → `WorkspaceManager.SwitchFocusedMonitorTo`
   - `workspace-release` → `WorkspaceManager.ReleaseCurrentWorkspace`
   - `focus <left|right|up|down>` → `WindowNavigator.FocusNearest`
   - `close` → `WindowNavigator.CloseForeground`

@@ -40,7 +40,7 @@ Primary users:
 ## 5. In-Scope Features (Current)
 
 ### 5.1 Workspaces
-- Nine numbered workspaces (`1..9`).
+- Numbered workspaces, unbounded (`>= 1`); the shipped config binds `1..9`.
 - Per-monitor current workspace state.
 - Workspace “home monitor” concept:
   - First entry pins workspace to monitor under cursor.
@@ -68,17 +68,16 @@ Primary users:
 ## 6. User Experience Requirements
 
 ### 6.1 Startup & Presence
-- Both daemons start as tray applications (each with its own icon on the primary taskbar); the start
-  script (`start-winland`) launches both with a single elevation prompt.
-- `winland-keys` shows a startup balloon (hook installed / failed); `winland-env` shows a control-
+- `winland-env` starts as a tray application (icon on the primary taskbar); `winland-keys` runs
+  headless (no tray icon or balloons). The start script (`start-winland`) launches both with a
+  single elevation prompt.
+- `winland-keys` logs its startup status (hook installed / failed); `winland-env` shows a control-
   channel balloon.
 - The `winland-env` tray icon displays the active workspace number of the primary monitor.
 
 ### 6.2 Discoverability
-- Tray menu must expose:
+- The `winland-env` tray menu must expose:
   - Status
-  - Reload config
-  - Open config
   - Exit
 
 ### 6.3 Configurability
@@ -103,7 +102,6 @@ Primary users:
 
 - Cloud sync of config or workspace state.
 - GUI settings editor for binds.
-- Arbitrary workspace count beyond 9.
 - Linux/macOS support.
 - Complex window tiling/layout algorithms.
 

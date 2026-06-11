@@ -44,8 +44,8 @@ workspace logic. (See `architecture-overview.md`.)
 - `_monitors`: monitor handle -> monitor state (`Current`, work area, primary flag).
 
 ### 3.2 Invariants
-1. Workspace ids are in `[1..9]`.
-2. A monitor’s `Current` is either `0` (released/none) or `[1..9]`.
+1. Workspace ids are any whole number `>= 1` (not capped; the shipped config binds 1..9).
+2. A monitor’s `Current` is either `0` (released/none) or a workspace id `>= 1`.
 3. `_windowWorkspace` is authoritative for membership.
 4. Switching workspace on one monitor does not mutate `Current` of other monitors.
 

@@ -45,8 +45,10 @@ to `winland-keys.exe` so the keys daemon can find it. The start script below han
 
 ### 1. Workspaces (`Win+1` … `Win+9`)
 
-Nine workspaces, switched with `Win+1`..`Win+9` (top-row digits or numpad). The model is
-**per-monitor and home-pinned**:
+Workspaces, switched with `Win+1`..`Win+9` by default (top-row digits or numpad). The count is
+**not capped** — each combo is just a config bind to `winlandctl workspace <n>`, so you can bind any
+key to any number (e.g. `bind = SUPER F1, winlandctl workspace 10`). The model is **per-monitor and
+home-pinned**:
 
 - Each workspace is pinned to a **home monitor** and never moves between monitors on its own.
 - On launch, monitors are ordered left-to-right and the first workspaces are homed across them
@@ -87,9 +89,9 @@ happens to be `winlandctl`. That means you can rebind, remove, or repurpose any 
 
 ## Configuration (`config.conf`)
 
-`config.conf` ships next to `winland-keys.exe` and is read on startup (and via the keys tray's
-**Reload config**). It uses a simple, hand-parsed Hyprland/Omarchy-style grammar — one
-`keyword = value` per line, `#` for comments.
+`config.conf` ships next to `winland-keys.exe` and is read on startup. To apply config edits,
+restart the keys daemon (re-run the start script — it stops old instances first). It uses a simple,
+hand-parsed Hyprland/Omarchy-style grammar — one `keyword = value` per line, `#` for comments.
 
 A global reader (`Config`) tokenizes the file into `keyword = value` entries; each feature interprets
 the keywords it cares about. Today the only keyword is `bind`, but the file is designed to grow more
@@ -117,7 +119,7 @@ bind = <MODS… KEY>, <command>
 The environment service understands these (drive it from any bind, or from a terminal):
 
 ```
-winlandctl workspace 1..9      switch the cursor monitor to that workspace
+winlandctl workspace <n>       switch the cursor monitor to workspace n (any whole number >= 1)
 winlandctl workspace-release   release the current workspace from the cursor monitor
 winlandctl focus left|right|up|down   move focus to the nearest window that way
 winlandctl close               close the foreground window
@@ -187,14 +189,15 @@ never fails on a locked file.
 
 ---
 
-## System tray icons
+## System tray icon
 
-Each daemon has its own tray icon (both on the primary monitor's taskbar):
+Only **`winland-env`** has a tray icon (on the primary monitor's taskbar): it draws the icon at
+runtime — a white circle with the active workspace number in black — and updates it whenever the
+**primary monitor's** workspace changes. Right-click for the menu (Status / Exit); double-click for
+status.
 
-- **`winland-env`** draws its icon at runtime — a white circle with the active workspace number in
-  black — and updates it whenever the **primary monitor's** workspace changes. Right-click for the
-  menu (Status / Exit); double-click for status.
-- **`winland-keys`** shows a status/menu icon (Status / Reload config / Open config / Exit).
+**`winland-keys` is headless** — no tray icon, no UI. Stop it with `start-winland.ps1 -Stop` /
+`run.ps1 -Stop` (or Task Manager); reload its config by restarting it.
 
 **Why only the main monitor's taskbar?** The tray (notification area) exists only on the primary
 monitor's taskbar in the default Windows 11 configuration. **Windows 11 does not allow apps to draw
@@ -262,13 +265,12 @@ src/
 
   winland-keys/                           the hotkey daemon (owns the keyboard hook)
     Program.cs                            entry point (single-instance mutex)
-    KeysApp.cs                            tray app: hook + config + run each combo's command
+    KeysApp.cs                            headless root: hook + config + run each combo's command
     KeyboardHook.cs                       global low-level Win-key hook on a dedicated thread
     Config.cs                             config.conf reader/tokenizer
     HotkeyConfig.cs                       interpret "bind" entries into combos + commands
     AppLauncher.cs                        run a bind's command (script / sibling .exe / shell)
     WindowsHotkeyDisabler.cs              set NoWinKeys so the shell ignores Win+<key>
-    KeysTray.cs                           tray presence (status, reload/open config, exit)
     config.conf                           user-editable shortcut bindings
     launch-or-focus.ps1 / launch-web.ps1 / show-desktop.ps1
     app.manifest                          requests administrator elevation

@@ -125,7 +125,8 @@ Behavior summary:
 
 ## 7. Operational Considerations
 
-- Config reload is manual via the `winland-keys` tray menu (`Reload config`).
+- Config is read at startup; restart the keys daemon to apply changes (the start scripts stop old
+  instances first).
 - Scripts and `winlandctl.exe` are expected next to `winland-keys.exe` (copied during build).
 - Execution policy bypass increases flexibility but expands trust assumptions.
 - Workspace/focus binds require `winland-env` to be running; otherwise `winlandctl` exits with code
