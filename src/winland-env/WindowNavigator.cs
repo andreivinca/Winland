@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Winland.Common;
 
 namespace Winland.Env;
 
@@ -14,13 +16,18 @@ internal enum Direction
 }
 
 /// <summary>
-/// Feature: directional focus (Win+Arrows moves focus to the nearest window in a direction) and
-/// closing the foreground window (Win+W). Self-contained window/geometry interop.
+/// Feature: window actions that don't involve workspaces — directional focus (Win+Arrows moves focus
+/// to the nearest window in a direction), closing the foreground window (Win+W), and focusing an app
+/// by process name (the launch-or-focus binds). Self-contained window/geometry interop.
 /// </summary>
 internal static class WindowNavigator
 {
     private const uint GW_HWNDPREV = 3;
+    private const uint GW_OWNER = 4;
     private const int WM_CLOSE = 0x0010;
+    private const int SW_RESTORE = 9;
+    private const uint SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000;
+    private const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
 
     public static void CloseForeground()
     {
@@ -31,6 +38,81 @@ internal static class WindowNavigator
         }
 
         PostMessage(current, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Focus the best window of the given process ("focus-app", used by launch-or-focus binds):
+    /// the topmost non-minimized window, or a minimized one (restored) when there is nothing else.
+    /// Returns false when the process has no suitable window or is already in the foreground — in
+    /// both cases the caller launches a new instance instead.
+    /// </summary>
+    public static bool FocusApp(string processName)
+    {
+        string name = processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? processName[..^4]
+            : processName;
+
+        var pids = new HashSet<uint>();
+        foreach (Process p in Process.GetProcessesByName(name))
+        {
+            using (p)
+            {
+                pids.Add((uint)p.Id);
+            }
+        }
+
+        if (pids.Count == 0)
+        {
+            return false;
+        }
+
+        // Already in the foreground: report "nothing to focus" so the caller opens a fresh instance.
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground != IntPtr.Zero
+            && GetWindowThreadProcessId(foreground, out uint foregroundPid) != 0
+            && pids.Contains(foregroundPid))
+        {
+            return false;
+        }
+
+        // EnumWindows yields top-to-bottom, so the first non-minimized hit is the app's frontmost
+        // window; the first minimized one is kept only as a fallback.
+        IntPtr best = IntPtr.Zero;
+        EnumWindows((h, _) =>
+        {
+            if (!IsAppWindow(h))
+            {
+                return true;
+            }
+
+            GetWindowThreadProcessId(h, out uint pid);
+            if (!pids.Contains(pid))
+            {
+                return true;
+            }
+
+            if (!IsIconic(h))
+            {
+                best = h;
+                return false;
+            }
+
+            if (best == IntPtr.Zero)
+            {
+                best = h;
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        if (best == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        Log.Line($"focus-app {name}");
+        ForceForeground(best);
+        return true;
     }
 
     public static void FocusNearest(Direction direction)
@@ -126,6 +208,16 @@ internal static class WindowNavigator
         return true;
     }
 
+    // A top-level window that represents an app: visible, unowned, titled, not the shell, not cloaked.
+    private static bool IsAppWindow(IntPtr hWnd)
+    {
+        return IsWindowVisible(hWnd)
+            && GetWindow(hWnd, GW_OWNER) == IntPtr.Zero
+            && GetWindowTextLength(hWnd) > 0
+            && !IsDesktopWindow(hWnd)
+            && !IsWindowCloaked(hWnd);
+    }
+
     private static bool IsDesktopWindow(IntPtr hWnd)
     {
         var className = new StringBuilder(256);
@@ -137,7 +229,34 @@ internal static class WindowNavigator
 
         string name = className.ToString(0, length);
         return string.Equals(name, "Progman", StringComparison.Ordinal)
-            || string.Equals(name, "WorkerW", StringComparison.Ordinal);
+            || string.Equals(name, "WorkerW", StringComparison.Ordinal)
+            || string.Equals(name, "Shell_TrayWnd", StringComparison.Ordinal); // the taskbar
+    }
+
+    // Bring a window to the foreground, restoring it first if minimized. Briefly clears the
+    // foreground-lock timeout, the same technique WorkspaceManager uses (AttachThreadInput is avoided
+    // — it can corrupt keyboard input state when attaching to the shell thread).
+    private static void ForceForeground(IntPtr hWnd)
+    {
+        if (IsIconic(hWnd))
+        {
+            ShowWindow(hWnd, SW_RESTORE);
+        }
+
+        uint original = 0;
+        bool got = SystemParametersInfoGet(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ref original, 0);
+        if (got)
+        {
+            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, UIntPtr.Zero, 0);
+        }
+
+        SetForegroundWindow(hWnd);
+        BringWindowToTop(hWnd);
+
+        if (got)
+        {
+            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, (UIntPtr)original, 0);
+        }
     }
 
     private static bool IsWindowOccluded(IntPtr hWnd)
@@ -187,7 +306,7 @@ internal static class WindowNavigator
         try
         {
             using var process = Process.GetProcessById((int)processId);
-            Console.WriteLine($"Focusing: {process.ProcessName}");
+            Log.Line($"focus -> {process.ProcessName}");
         }
         catch (ArgumentException)
         {
@@ -350,6 +469,18 @@ internal static class WindowNavigator
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    private static extern bool SystemParametersInfoGet(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
+
+    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    private static extern bool SystemParametersInfoSet(uint uiAction, uint uiParam, UIntPtr pvParam, uint fWinIni);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);

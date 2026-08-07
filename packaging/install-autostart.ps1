@@ -23,6 +23,15 @@ param(
     [switch]$Uninstall
 )
 
+# Registering tasks with -RunLevel Highest needs admin; fail up front with a clear message instead
+# of letting Register-ScheduledTask produce a cryptic one.
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
+        [Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Error 'Run this script from an elevated (administrator) PowerShell.'
+    return
+}
+
 $tasks = @(
     @{ Name = 'Winland Env';  Exe = Join-Path $Dir 'winland-env.exe' },
     @{ Name = 'Winland Keys'; Exe = Join-Path $Dir 'winland-keys.exe' }

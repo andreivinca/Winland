@@ -12,6 +12,7 @@ dist/
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 
-# Winland runtime debug log
+# Winland runtime debug log (and its rotated generation)
 winland-hooklog.txt
+winland-hooklog.txt.old
 artifacts/

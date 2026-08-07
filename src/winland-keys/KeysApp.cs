@@ -21,11 +21,13 @@ internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
         // Turn off Windows' own Win+<key> hotkeys so the shell can't act on combos we own.
         WindowsHotkeyDisabler.EnsureDisabled();
 
+        // Parse the binds BEFORE the hook goes live: the hook thread calls ResolveActionId from the
+        // moment it is installed, so the binds must already exist by then.
+        _binds = HotkeyConfig.Parse(Config.Load(Config.DefaultPath));
+
         // The hook asks us to resolve each Win+combo to an action id (0 = not ours), then dispatches it
         // back on the UI thread.
         _hook = new KeyboardHook(ResolveActionId, HandleAction);
-
-        _binds = HotkeyConfig.Parse(Config.Load(Config.DefaultPath));
 
         Log.Line(_hook.Installed
             ? $"keys daemon running (headless) — {_binds.Count} shortcut(s); Super (Win) hotkeys active."

@@ -1,252 +1,298 @@
 # Winland
 
-A small .NET 10 set of tray utilities that bring Omarchy / Hyprland-style **Super-key (Win) keyboard
-workflow** to Windows 11: per-monitor workspaces, directional window focus, and config-driven app
-shortcuts.
+Winland brings an Omarchy / Hyprland-style **Super-key (Win) keyboard workflow** to Windows 11:
+per-monitor workspaces you switch with `Win`+a number, move windows between them, focus windows by
+direction, and launch apps — all from the keyboard, all configurable.
+
+It's a tiny .NET 10 tray utility (actually three small cooperating processes — see
+[Architecture](#architecture)). When it isn't running, your keyboard behaves completely normally.
+
+---
+
+## Quick start
+
+Winland runs from a self-contained folder (`dist/`) that holds the executables, the config file, and
+the helper scripts.
+
+1. **Start it:** double-click **`start-winland.cmd`** (or run
+   `powershell -ExecutionPolicy Bypass -File .\start-winland.ps1`).
+2. Accept the **single UAC prompt** — Winland must run elevated (explained
+   [below](#why-it-needs-administrator)).
+3. A small **workspace-number icon** appears in the system tray. You're running.
+
+To stop it: `start-winland.ps1 -Stop` (or the `run.ps1 -Stop` dev script). To start it automatically
+at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-logon).
+
+> Running from source instead? Use `.\run.ps1` (builds and launches). See [Building](#building).
+
+---
+
+## The idea in 30 seconds
+
+- A **workspace** is a numbered group of windows (1, 2, 3, …). There's no hard limit on the number.
+- Each workspace lives on a **home monitor** — the monitor it was first opened on. It never wanders
+  to another monitor on its own.
+- A monitor shows **one workspace at a time**. Switching a monitor to another workspace minimizes
+  ("puts away") the windows it was showing and restores the new workspace's windows.
+- A window belongs to a workspace **only when you say so** — when you **move** it (`Win+Shift+N`) or
+  **link** it (`Win+Space`). Windows that are open when Winland starts belong to no workspace until
+  you claim them, and just restoring or dragging a window does *not* silently change which workspace
+  it belongs to.
+- There's also a **scratchpad** (`Win+S`): a workspace with no home monitor that pops up on whatever
+  monitor your mouse is on, and disappears again on the next press.
+
+---
+
+## Keyboard shortcuts
+
+These are the **defaults** — every one is just a line in `config.conf`, so you can change any of them
+(see [Configuration](#configuration)).
+
+### Switch workspaces
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`1` … `Win`+`9` | Show workspace 1–9 on its home monitor (top-row digits **or** numpad). |
+| `Win`+`Alt`+`1` … `9` | Show workspace 11–19. |
+
+Pressing `Win`+`N` always **re-asserts** workspace N's layout on its monitor: it minimizes anything
+there that doesn't belong to N, restores N's windows — **including ones you minimized** — and
+**pulls back** any of N's windows you had dragged onto another monitor. Windows already visible stay
+exactly where they are, so re-pressing the same workspace is a handy "tidy this monitor" button.
+
+The **first** time you press `Win`+`N` for a workspace that has never been opened, it opens on the
+monitor under your **mouse cursor** and is pinned there from then on.
+
+### Move a window to another workspace
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`Shift`+`1` … `9` | Move the **focused** window to workspace 1–9 and follow it there. |
+| `Win`+`Shift`+`Alt`+`1` … `9` | Move the focused window to workspace 11–19. |
+
+The window is unlinked from its old workspace and linked to the target. The target workspace becomes
+active (on its home monitor) and the window ends up visible and focused — if the target lives on a
+different monitor, the window is moved to that monitor.
+
+### Link a window to the current workspace
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`Space` | Link the **focused** window to the workspace currently shown on its monitor. |
+
+This is how you "claim" a window into a workspace **without moving it** — useful for a window you
+restored from the taskbar, or a newly opened app, so it stays put when you switch workspaces. (Nothing
+moves or minimizes; it only changes membership.)
+
+### The scratchpad
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`S` | Toggle the **scratchpad** on the monitor under the mouse. |
+
+The scratchpad is a roaming workspace with no home monitor: `Win+S` shows it (and its windows) on
+whatever monitor your mouse is on; `Win+S` again hides it and restores that monitor's previous
+workspace. Attach a window to it the same way as to any workspace — focus the window while the
+scratchpad is shown and press `Win+Space`.
+
+### Focus, close, and move workspaces between monitors
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`←` `→` `↑` `↓` | Move focus to the nearest visible window in that direction. |
+| `Win`+`W` | Close the focused window. |
+| `Win`+`Shift`+`W` | **Release** the current workspace from its monitor (minimizes its windows and unpins it). Move your mouse to another monitor and press `Win`+`N` to re-open it there — that's how you relocate a whole workspace to a different monitor. |
+
+### Apps and Windows shortcuts (defaults)
+
+| Shortcut | What it does |
+| --- | --- |
+| `Win`+`Enter` | Windows Terminal (focus if already open) |
+| `Win`+`Shift`+`B` | Firefox |
+| `Win`+`Shift`+`N` | VS Code |
+| `Win`+`Shift`+`A` | Gemini (as a desktop web app) |
+| `Win`+`Shift`+`M` | Spotify (focus if open) |
+| `Win`+`Shift`+`T` | Task Manager |
+| `Win`+`E` / `Win`+`Shift`+`F` | File Explorer |
+| `Win`+`D` | Show desktop |
+| `Win`+`R` | Run dialog |
+| `Win`+`Shift`+`S` | Snipping Tool (screen clip) |
+
+---
+
+## Configuration
+
+All shortcuts live in **`config.conf`**, a plain text file sitting next to `winland-keys.exe` (in the
+`dist/` folder). Edit it with any text editor.
+
+**To apply changes, restart the keys daemon** — re-run `start-winland.ps1` (it stops the old instance
+first). Config is read once at startup.
+
+### Bind syntax
+
+One shortcut per line:
+
+```
+bind = <MODIFIERS… KEY>, <command>
+```
+
+- Everything **before the comma** is the key combo. Tokens are space-separated and the **last token is
+  the key**.
+  - Modifiers: **`SUPER`** (required — Winland only acts while Win is held), `SHIFT`, `ALT`, `CTRL`.
+  - Keys: `A`–`Z`, `0`–`9`, `NUMPAD0`–`NUMPAD9`, `F1`–`F24`, arrows (`LEFT` `RIGHT` `UP` `DOWN`),
+    `RETURN`/`ENTER`, `SPACE`, `TAB`, `ESC`, and a few more.
+- Everything **after the comma** is the command to run when the combo is pressed. Its **first word**
+  decides how it runs:
+  - a **`name.ps1`** script sitting next to the exe → runs that PowerShell script with the rest of the
+    line as arguments;
+  - a **`name.exe`** sitting next to the exe → runs that program directly (**this is how `winlandctl`
+    is found**);
+  - otherwise → the whole line runs as a normal shell command (`firefox`, `explorer.exe`, a `https://`
+    URL, a `mailto:`/`ms-settings:` URI, …).
+
+Lines starting with `#` are comments.
+
+### Commands you can bind (`winlandctl` verbs)
+
+The workspace and focus features are driven through the `winlandctl` helper. Bind any of these (or run
+them yourself from a terminal):
+
+| Command | Effect |
+| --- | --- |
+| `winlandctl workspace <n>` | Switch to / re-assert workspace `n` (any whole number ≥ 1). |
+| `winlandctl movetoworkspace <n>` | Move the focused window to workspace `n` and follow it. |
+| `winlandctl link-here` | Link the focused window to the workspace shown on its monitor. |
+| `winlandctl scratchpad` | Toggle the roaming scratchpad on the monitor under the mouse. |
+| `winlandctl workspace-release` | Release the current workspace from its monitor. |
+| `winlandctl focus left\|right\|up\|down` | Focus the nearest window in that direction. |
+| `winlandctl focus-app <process>` | Focus that app's window; fails if there is none (or it's already focused). |
+| `winlandctl close` | Close the focused window. |
+
+Because workspaces aren't capped, you can bind any key to any number — e.g.
+`bind = SUPER F1, winlandctl workspace 20`. These commands work from **any** terminal, elevated or
+not — the control pipe accepts every process of the logged-on user.
+
+### Helper scripts (shipped next to the exe)
+
+- `launch-or-focus.ps1 <process>` — focus an existing window of that process (via
+  `winlandctl focus-app`), or launch it if none is open — also when it's already focused, so
+  re-pressing the combo opens another instance. Example: `bind = SUPER SHIFT M, launch-or-focus spotify`.
+- `launch-web.ps1 <url>` — open a URL as a chromeless desktop app window (Chrome/Chromium `--app=`).
+- `show-desktop.ps1` — minimize all windows (like the native `Win+D`).
+
+Drop your own `foo.ps1` next to the exe and reference it as `bind = … foo <args>` — no rebuild needed.
+
+### Example config
+
+```conf
+# Switch workspaces
+bind = SUPER 1, winlandctl workspace 1
+bind = SUPER 2, winlandctl workspace 2
+
+# Move the focused window to a workspace (and follow it)
+bind = SUPER SHIFT 1, winlandctl movetoworkspace 1
+bind = SUPER SHIFT 2, winlandctl movetoworkspace 2
+
+# Link the focused window to the current workspace
+bind = SUPER SPACE, winlandctl link-here
+
+# Focus / close / release
+bind = SUPER LEFT, winlandctl focus left
+bind = SUPER W, winlandctl close
+bind = SUPER SHIFT W, winlandctl workspace-release
+
+# Apps and Windows shortcuts
+bind = SUPER RETURN, launch-or-focus wt.exe WindowsTerminal -- -d E:\WinLand
+bind = SUPER SHIFT B, firefox
+bind = SUPER E, explorer.exe
+bind = SUPER D, show-desktop
+```
+
+---
+
+## Architecture
 
 Winland is **three cooperating processes**, not one app:
 
 | Executable | Role | Keyboard hook? |
 | --- | --- | --- |
-| **`winland-keys.exe`** | Hotkey daemon. Owns one global low-level keyboard hook, and on each Super (Win) combo runs the command configured for it. | ✅ the only one |
-| **`winland-env.exe`** | Environment service ("window manager"): per-monitor workspaces, directional focus, and the numbered tray icon. Driven entirely over a control pipe. | ❌ none |
-| **`winlandctl.exe`** | Tiny CLI that forwards one command to `winland-env` over its pipe and exits. The bridge the keys daemon shells out to. | ❌ none |
+| **`winland-keys.exe`** | Hotkey daemon. Owns one global low-level keyboard hook; on each Super (Win) combo it runs that combo's configured command. | ✅ the only one |
+| **`winland-env.exe`** | Environment service ("window manager"): per-monitor workspaces, directional focus, and the tray icon. Driven entirely over a control pipe. | ❌ none |
+| **`winlandctl.exe`** | Tiny CLI that forwards one command to `winland-env` over a named pipe and exits. | ❌ none |
 
-The Super-key flow ties them together:
+The flow that ties them together:
 
 ```
-Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  winlandctl  →  pipe  →  winland-env  →  switch workspace
+Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  pipe  →  winland-env  →  switches workspace
 ```
 
-`winland-keys` installs a single global low-level keyboard hook that owns the Win key. While Win is
-held it swallows the combos it handles (so Windows never performs its own action) and runs each
-combo's configured command; everything else passes through untouched. The hook is process-local —
-when `winland-keys` isn't running, all keys behave normally.
+Why split it up? Each part has one job: the hook lives in a tiny, rarely-changing process (so
+restarting the window manager doesn't break your hotkeys, and vice-versa); the environment is a
+**scriptable control surface** any tool can drive via `winlandctl`; and the keys daemon stays dumb —
+it only maps a combo to a command line. The cost is that **both daemons must run**, and
+`winlandctl.exe` must sit next to `winland-keys.exe` (the start scripts handle this).
 
-## Why three processes?
-
-The monolith was split (see `git log`) so that each part has one job:
-
-- **Crash isolation.** The keyboard hook lives in a tiny, rarely-changing process. If the
-  window-manager service (`winland-env`) crashes or you restart it while iterating, your hotkeys keep
-  working — and vice-versa.
-- **A scriptable control surface.** Because the environment is driven by `winlandctl` over a named
-  pipe, *anything* can drive it — a hotkey, a script, a scheduled task, your own tooling — just by
-  running `winlandctl <command>`. The keys daemon is simply the most common caller.
-- **A dumb, predictable hotkey daemon.** `winland-keys` has no workspace or focus logic at all; it
-  only maps a combo to a command line. All behavior lives behind the `winlandctl` verbs.
-
-The cost is more moving parts: **both daemons must be running**, and `winlandctl.exe` must sit next
-to `winland-keys.exe` so the keys daemon can find it. The start script below handles both.
+`winland-keys` is **headless** (no window, no tray icon). Only `winland-env` has a tray icon, on the
+primary monitor's taskbar: it draws a circle with the active workspace number and updates it as the
+**primary monitor's** workspace changes. (Windows 11 doesn't let apps put custom widgets on
+secondary-monitor taskbars, so the indicator lives in the one place every tray app gets.) Right-click
+the icon for Status / Exit.
 
 ---
 
-## Features
+## Why it needs Administrator
 
-### 1. Workspaces (`Win+1` … `Win+9`)
+Winland's daemons run **elevated**, for two reasons:
 
-Workspaces, switched with `Win+1`..`Win+9` by default (top-row digits or numpad). The count is
-**not capped** — each combo is just a config bind to `winlandctl workspace <n>`, so you can bind any
-key to any number (e.g. `bind = SUPER F1, winlandctl workspace 10`). The model is **per-monitor and
-home-pinned**:
+1. **Hotkeys over elevated windows.** A normal (medium-integrity) keyboard hook can't intercept input
+   destined for an elevated window. If you run, say, Visual Studio as Administrator, `Win+3` would
+   otherwise fall through to it as a literal "3". Likewise, `winland-env` can only minimize/restore/
+   focus elevated windows because it is elevated itself.
+2. **Reclaiming `Win`+`<number>`.** By default Windows uses `Win`+`<number>` to launch pinned taskbar
+   apps. On startup `winland-keys` sets the **`NoWinKeys`** policy
+   (`HKCU\…\Policies\Explorer\NoWinKeys = 1`) so the shell stops owning those combos; if it had to
+   change the value it **restarts Explorer once** (asking it to exit cleanly first) so it takes effect
+   immediately.
 
-- Each workspace is pinned to a **home monitor** and never moves between monitors on its own.
-- On launch, monitors are ordered left-to-right and the first workspaces are homed across them
-  (leftmost monitor = workspace 1, and so on). Only currently visible (non-minimized) windows are
-  assigned.
-- The **active monitor is the one under the mouse cursor**. The first time you press `Win+N` for an
-  unhomed workspace, it opens that (empty) workspace on the cursor's monitor and pins it there.
-  Afterwards `Win+N` always returns to that monitor.
-- Switching a workspace **minimizes** whatever its home monitor was showing and **restores** that
-  workspace's windows. No other monitor is touched.
-- Activating, maximizing, restoring, or dragging a window pulls it into its monitor's current
-  workspace (and unlinks it from any previous one), so windows follow what you actually do.
+**The apps you launch do NOT inherit that elevation.** Binds run their commands and helper scripts
+with your normal user token (borrowed from the desktop shell), so Firefox, VS Code, the terminal etc.
+start unelevated, exactly as if you had launched them yourself. Only if that route is unavailable
+(e.g. Explorer isn't running) does a launch fall back to the elevated token.
 
-**Moving a workspace to another monitor** — release it, then re-summon it:
-
-- `Win+Shift+W` **releases** the current workspace: its windows are minimized (still assigned to it)
-  and the workspace is unpinned from its monitor.
-- Move the mouse to another monitor and press `Win+N` — because the workspace is now unhomed, it
-  re-pins to the cursor's monitor and restores its windows there.
-
-### 2. Window navigator (`Win+Arrows`, `Win+W`)
-
-- `Win+←` / `Win+↑` / `Win+→` / `Win+↓` — move focus to the **nearest visible window** in that
-  direction. Selection is geometric (nearest edge in the primary axis, best overlap in the other),
-  and it skips minimized, cloaked, off-screen, and fully-occluded windows.
-- `Win+W` — close the foreground window.
-
-### 3. App shortcuts (config-driven)
-
-Application launch/focus shortcuts are defined in `config.conf` (see below), not hardcoded.
-
-Note: in this architecture **the workspace and window-navigator combos are themselves config
-entries** (`bind = SUPER 1, winlandctl workspace 1`, `bind = SUPER LEFT, winlandctl focus left`, …) —
-not reserved built-ins. The keys daemon doesn't special-case them; they're just binds whose command
-happens to be `winlandctl`. That means you can rebind, remove, or repurpose any of them.
+This intentionally suppresses Windows' built-in Win-key shortcuts while Winland is set up. It's
+reversible — clear the `NoWinKeys` value (set it to `0` or delete it; see `NoWinKeys.reg`) and restart
+Explorer to restore the defaults.
 
 ---
 
-## Configuration (`config.conf`)
+## Building
 
-`config.conf` ships next to `winland-keys.exe` and is read on startup. To apply config edits,
-restart the keys daemon (re-run the start script — it stops old instances first). It uses a simple,
-hand-parsed Hyprland/Omarchy-style grammar — one `keyword = value` per line, `#` for comments.
-
-A global reader (`Config`) tokenizes the file into `keyword = value` entries; each feature interprets
-the keywords it cares about. Today the only keyword is `bind`, but the file is designed to grow more
-configuration without changing the reader.
-
-### Bind syntax
-
-```
-bind = <MODS… KEY>, <command>
-```
-
-- **Combo** (before the comma): space-separated tokens, the **last token is the key**.
-  - Modifiers: `SUPER` (required — the hook only acts while Win is held), `SHIFT`, `ALT`, `CTRL`.
-  - Keys: `A`–`Z`, `0`–`9`, `RETURN`/`ENTER`, arrows, `F1`–`F24`, `SPACE`, `TAB`, `ESC`,
-    `NUMPAD0`–`NUMPAD9`, and a few more.
-- **Command** (after the comma) is resolved at run time, with no special keywords. Its first token
-  decides how it runs:
-  - a **`<token>.ps1`** script next to the exe → that script runs with the rest of the line as args;
-  - a **`<token>.exe`** sibling next to the exe → that program runs directly (**this is how
-    `winlandctl` is found**);
-  - otherwise the whole line is executed as a shell command (`firefox`, `explorer.exe`, a URI, …).
-
-### The `winlandctl` verbs
-
-The environment service understands these (drive it from any bind, or from a terminal):
-
-```
-winlandctl workspace <n>       switch the cursor monitor to workspace n (any whole number >= 1)
-winlandctl workspace-release   release the current workspace from the cursor monitor
-winlandctl focus left|right|up|down   move focus to the nearest window that way
-winlandctl close               close the foreground window
-```
-
-Exit codes: `0` OK · `1` the env replied `ERR` (or no reply) · `2` bad usage · `3` couldn't reach
-`winland-env` (is it running?).
-
-### Shipped helper scripts (next to the exe)
-
-- `launch-or-focus.ps1 <process>` — focus an existing window of that process if one is open, else
-  launch it (focus-if-open behavior).
-- `launch-web.ps1 <url>` — open a URL as a chromeless desktop app window (Chrome/Chromium `--app=`).
-- `show-desktop.ps1` — minimize all eligible top-level windows (mimics the native `Win+D`).
-
-Drop any `foo.ps1` next to the exe and reference it as `bind = … foo <args>` — no code change needed.
-
-### Example (excerpt from the shipped config)
-
-```conf
-# Environment control (winland-env, via winlandctl)
-bind = SUPER 1, winlandctl workspace 1
-bind = SUPER LEFT, winlandctl focus left
-bind = SUPER W, winlandctl close
-bind = SUPER SHIFT W, winlandctl workspace-release
-
-# Re-register default Windows functionality (NoWinKeys turns these off)
-bind = SUPER E, explorer.exe
-bind = SUPER D, show-desktop
-
-# App shortcuts
-bind = SUPER RETURN, launch-or-focus wt.exe WindowsTerminal -- -d E:\WinLand
-bind = SUPER SHIFT B, firefox
-bind = SUPER SHIFT A, launch-web https://gemini.google.com
-bind = SUPER SHIFT M, launch-or-focus spotify
-```
-
----
-
-## Starting Winland
-
-Both daemons must run, **both elevated** (see below). Two entry points are provided.
-
-### From a packaged folder (`dist/`) — recommended
-
-`dist/` holds all three exes side by side plus the config and scripts. To start everything:
-
-- **Double-click `start-winland.cmd`**, or run `powershell -ExecutionPolicy Bypass -File .\start-winland.ps1`.
-
-It self-elevates with a **single UAC prompt**, stops any previous instances (so you never get two
-keys daemons double-firing every shortcut), then starts `winland-env.exe` and `winland-keys.exe`.
-`start-winland.ps1 -Stop` stops both. The tracked source for these lives in `packaging/`.
-
-### From source (development)
-
-`run.ps1` at the repo root builds and runs straight from the build outputs:
-
-```powershell
-.\run.ps1              # stop old → build (Debug) → start both daemons elevated (one UAC prompt)
-.\run.ps1 -Dir .\dist  # skip the build and start the pre-built exes in dist
-.\run.ps1 -NoBuild     # start what's already built
-.\run.ps1 -Stop        # stop both daemons
-```
-
-It stops the running daemons **before** building (a running daemon locks its own DLLs), so a rebuild
-never fails on a locked file.
-
----
-
-## System tray icon
-
-Only **`winland-env`** has a tray icon (on the primary monitor's taskbar): it draws the icon at
-runtime — a white circle with the active workspace number in black — and updates it whenever the
-**primary monitor's** workspace changes. Right-click for the menu (Status / Exit); double-click for
-status.
-
-**`winland-keys` is headless** — no tray icon, no UI. Stop it with `start-winland.ps1 -Stop` /
-`run.ps1 -Stop` (or Task Manager); reload its config by restarting it.
-
-**Why only the main monitor's taskbar?** The tray (notification area) exists only on the primary
-monitor's taskbar in the default Windows 11 configuration. **Windows 11 does not allow apps to draw
-custom widgets on the taskbar** (the old Win10-era deskband/toolbar API is gone), so a true
-per-monitor on-taskbar workspace indicator would require display hacks. Winland avoids all of that
-and uses the one place the OS already gives every tray app: a single icon on the primary taskbar.
-
----
-
-## ⚠️ Important: Winland disables some default Windows behavior
-
-For its shortcuts to work reliably, Winland needs two things from the OS:
-
-1. **Both daemons run elevated (as Administrator).** A normal (medium integrity) keyboard hook is
-   blocked by Windows from intercepting input destined for an elevated window (UIPI). If you run,
-   say, Visual Studio as Administrator, `Win+3` would otherwise fall through to it as a literal "3".
-   Elevation also matters for the control pipe: `winland-env` creates it elevated, so the
-   `winlandctl` the keys daemon launches must be elevated too (it inherits elevation from the
-   elevated keys daemon). The app manifests request administrator rights; you'll see a UAC prompt
-   (one, via the start script).
-
-2. **`winland-keys` turns off Windows' own `Win`+`<key>` shortcuts (the `NoWinKeys` policy).**
-   Otherwise the shell still acts on combos Winland owns — most visibly `Win`+`<number>`, which
-   Windows uses to launch pinned taskbar apps. The keys daemon sets the `NoWinKeys` policy
-   (`HKCU\…\Policies\Explorer\NoWinKeys = 1`) on startup. If it had to change the value, it
-   **restarts Explorer once** so the change takes effect immediately; otherwise it's a no-op.
-
-This means built-in Windows Win-key shortcuts are intentionally suppressed while the policy is set.
-The behavior is reversible — clear the `NoWinKeys` value (set it to `0` or delete it; see
-`NoWinKeys.reg`) and restart Explorer to restore Windows' defaults.
-
----
-
-## Build & run
+From the repo root, with the .NET 10 SDK:
 
 ```powershell
 dotnet build Winland.slnx -c Debug
 ```
 
-Per-project outputs land in each project's `bin/Debug/net10.0-windows/` (or `net10.0/` for
-`winlandctl`). Building `winland-keys` also **copies `winlandctl.exe` (and its runtime files) next to
-`winland-keys.exe`**, so the keys daemon can find it when run straight from its build folder. The
-easiest way to actually launch from source is `.\run.ps1` (above).
-
-To start both daemons elevated automatically at logon without a UAC prompt, use the autostart
-installer (registers one Scheduled Task per daemon, running with highest privileges at sign-in):
+Building `winland-keys` also copies `winlandctl.exe` next to it, so the keys daemon can find it when
+run from its build folder. The simplest way to launch from source is the dev script:
 
 ```powershell
-# run elevated, from the folder containing the exes (e.g. dist)
+.\run.ps1              # stop old → build (Debug) → start both daemons elevated (one UAC prompt)
+.\run.ps1 -Dir .\dist  # skip the build, run the pre-built exes in dist
+.\run.ps1 -NoBuild     # start whatever is already built
+.\run.ps1 -Stop        # stop both daemons
+```
+
+It stops running daemons **before** building (a running daemon locks its own DLLs), so a rebuild never
+fails on a locked file.
+
+### Auto-start at logon
+
+To start both daemons elevated at every sign-in without a UAC prompt (registers one Scheduled Task per
+daemon, running with highest privileges):
+
+```powershell
+# run from an elevated PowerShell, in the folder with the exes (e.g. dist)
 .\install-autostart.ps1            # register
 .\install-autostart.ps1 -Uninstall # remove
 ```
@@ -259,40 +305,23 @@ installer (registers one Scheduled Task per daemon, running with highest privile
 Winland.slnx                              solution
 
 src/
-  Winland.Common/                         shared library, referenced by all three exes
-    Ipc.cs                                pipe name + OK/ERR protocol constants
-    Log.cs                                append-only winland-hooklog.txt logger
-
-  winland-keys/                           the hotkey daemon (owns the keyboard hook)
-    Program.cs                            entry point (single-instance mutex)
-    KeysApp.cs                            headless root: hook + config + run each combo's command
-    KeyboardHook.cs                       global low-level Win-key hook on a dedicated thread
-    Config.cs                             config.conf reader/tokenizer
-    HotkeyConfig.cs                       interpret "bind" entries into combos + commands
+  Winland.Common/                         shared library (pipe protocol + logger)
+  winland-keys/                           hotkey daemon (owns the keyboard hook)
+    KeyboardHook.cs                       global low-level Win-key hook (dedicated thread)
+    Config.cs / HotkeyConfig.cs           read config.conf, parse "bind" lines
     AppLauncher.cs                        run a bind's command (script / sibling .exe / shell)
+    UnelevatedLauncher.cs                 start apps with the user's normal (unelevated) token
     WindowsHotkeyDisabler.cs              set NoWinKeys so the shell ignores Win+<key>
-    config.conf                           user-editable shortcut bindings
+    config.conf                           the shortcut bindings you edit
     launch-or-focus.ps1 / launch-web.ps1 / show-desktop.ps1
-    app.manifest                          requests administrator elevation
-
-  winland-env/                            the environment service (no keyboard hook)
-    Program.cs                            entry point
-    EnvApp.cs                             root: workspace engine + tray + pipe server
-    DispatchServer.cs                     named-pipe listener (control channel)
-    UiInvoker.cs                          marshal a pipe command onto the UI thread
-    Dispatcher.cs                         map a command ("workspace 1") to an operation
-    WorkspaceManager.cs                   per-monitor workspaces
-    WindowNavigator.cs                    Win+arrows focus + Win+W close
+  winland-env/                            environment service (no keyboard hook)
+    WorkspaceManager.cs                   per-monitor workspaces (switch / move / link / scratchpad / release)
+    WindowNavigator.cs                    Win+arrows focus, Win+W close, focus-app
+    Dispatcher.cs                         map a winlandctl command to an operation
+    DispatchServer.cs / UiInvoker.cs      named-pipe control channel
     TrayIcon.cs                           numbered workspace tray icon
-    app.manifest                          requests administrator elevation
+  winlandctl/                             one-shot control CLI (sends one command over the pipe)
 
-  winlandctl/                             the control CLI (one-shot)
-    Program.cs                            send one command to winland-env over the pipe
-
-packaging/
-  start-winland.ps1 / start-winland.cmd   start both daemons elevated (tracked source)
-  install-autostart.ps1                   register the two daemons as logon Scheduled Tasks
-
-dist/                                     local assembled output (gitignored): all three exes,
-                                          config, scripts, start-winland.*, install-autostart.ps1
+packaging/                                start-winland.* and install-autostart.ps1 (tracked source)
+dist/                                     assembled output (gitignored): all exes + config + scripts
 ```

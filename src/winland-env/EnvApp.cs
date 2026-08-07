@@ -40,8 +40,12 @@ internal sealed class EnvApp : ApplicationContext
     private string BuildStatusText() =>
         "Winland environment is running.\n\n" +
         "Driven by winlandctl over the control pipe:\n" +
-        "  winlandctl workspace <n>   (any whole number >= 1)\n" +
+        "  winlandctl workspace <n>          (any whole number >= 1)\n" +
+        "  winlandctl movetoworkspace <n>    move the focused window to n\n" +
+        "  winlandctl link-here              link the focused window to the current workspace\n" +
+        "  winlandctl scratchpad             toggle the roaming scratchpad on the mouse's monitor\n" +
         "  winlandctl focus left|right|up|down\n" +
+        "  winlandctl focus-app <process>    focus that app's window (fails if none, or already focused)\n" +
         "  winlandctl close\n" +
         "  winlandctl workspace-release";
 

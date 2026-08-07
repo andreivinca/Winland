@@ -4,6 +4,9 @@
 .DESCRIPTION
   Enumerates top-level windows and minimizes eligible app windows, skipping
   shell/desktop and tool/owned windows.
+.NOTES
+  Bind scripts run with the user's normal (unelevated) token, so windows of
+  elevated (administrator) apps are protected by UIPI and stay up.
 #>
 
 Add-Type @'

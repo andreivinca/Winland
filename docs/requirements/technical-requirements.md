@@ -29,8 +29,9 @@
 ## 3. Core Technical Architecture
 
 - **`winland-keys`** — `Program.Main` (single-instance mutex) runs `KeysApp`, which composes
-  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher`, and `WindowsHotkeyDisabler`.
-  It owns the only keyboard hook and has no workspace/focus logic.
+  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher` + `UnelevatedLauncher`, and
+  `WindowsHotkeyDisabler`. It owns the only keyboard hook and has no workspace/focus logic. Binds
+  are parsed before the hook is installed (the hook thread resolves combos from the moment it is live).
 - **`winland-env`** — `Program.Main` runs `EnvApp`, which composes `WorkspaceManager`,
   `WindowNavigator` (static), `Dispatcher`, `UiInvoker`, `DispatchServer`, and `TrayIcon`. It has no
   keyboard hook; all actions arrive on the control pipe.
@@ -42,7 +43,10 @@
 ### 4.1 Keyboard Capture
 - Global low-level keyboard hook (`WH_KEYBOARD_LL`) on a dedicated STA thread.
 - The hook thread runs a message loop to keep the callback within the low-level-hook timeout.
-- Win key down/up state tracked for combo detection.
+- The hook is stateless about the Win key: each key-down asks the OS whether Win is physically held.
+- Shift/Ctrl/Alt are additionally tracked per side from real (non-injected) events, because with
+  NumLock on Windows brackets numpad keys with a synthetic Shift (scancodes `0x22A`/`0x236` for
+  left/right) that makes `GetAsyncKeyState` misreport Shift during numpad combos.
 
 ### 4.2 Action Resolution Contract
 - Resolver signature: `(vk, shiftDown, altDown, ctrlDown) -> actionId`.
@@ -65,7 +69,8 @@
 
 ### 4.5 Bind Matching
 - At key-down with Win held, build the modifier bitmask from physical Shift/Alt/Ctrl state and match
-  the first bind (in file order) with the same `Vk` and `Modifiers`. Reloading config reparses binds.
+  the first bind (in file order) with the same `Vk` and `Modifiers`. Config is read once at startup;
+  restarting the daemon applies changes (there is no reload).
 
 ## 5. Control Channel Requirements (IPC)
 
@@ -77,14 +82,19 @@
 
 ### 5.2 Server (`winland-env`)
 - `DispatchServer` listens on a background thread; each connection carries exactly one command.
+- The pipe carries an explicit ACL granting the logged-on user's processes access (elevated or not),
+  so unelevated scripts/terminals can use `winlandctl`. Trade-off: any same-user process can drive
+  the verbs — which is why the verbs are limited to window management.
 - The command is marshalled to the UI thread by `UiInvoker` (hidden window + synchronous
   `SendMessage`) before `Dispatcher.Execute` runs it, because the operations touch window/WinEvent
   and foreground state.
-- A malformed/broken connection must not kill the server.
+- A malformed/broken connection must not kill the server, and a client that connects but never sends
+  its line is dropped after a read timeout (it must not wedge the single-connection server).
 
 ### 5.3 Dispatcher verbs
-- `workspace <n>` (n >= 1), `workspace-release`, `focus <left|right|up|down>`, `close`; unknown verbs
-  and invalid arguments return `ERR …`.
+- `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected), `link-here`,
+  `scratchpad`, `workspace-release`, `focus <left|right|up|down>`, `focus-app <process>`, `close`;
+  unknown verbs and invalid arguments return `ERR …`.
 
 ### 5.4 Client (`winlandctl`)
 - Joins args into one command line, connects with a 2s timeout, writes the line, reads one reply.
@@ -93,16 +103,21 @@
 ## 6. Workspace System Requirements (`winland-env`)
 
 ### 6.1 Workspace Domain Model
-- No fixed workspace count — any whole number >= 1. The shipped config binds 1..9, but a user can
-  bind any key to any number (e.g. `bind = SUPER F1, winlandctl workspace 10`).
-- Membership source of truth: `Dictionary<IntPtr,int> _windowWorkspace`.
-- Additional state: `_lastActive` (focus restoration), `_workspaceHome` (monitor pinning),
-  `_monitors` (monitor state: `Current`, work area, primary flag).
+- No fixed workspace count — any whole number >= 1. The shipped config binds 1..9 and 11..19, but a
+  user can bind any key to any number (e.g. `bind = SUPER F1, winlandctl workspace 20`).
+- `int.MaxValue` is reserved for the scratchpad (a roaming workspace with no home monitor, toggled
+  by the `scratchpad` verb).
+- Membership source of truth: `Dictionary<IntPtr,int> _windowWorkspace`. Membership changes only on
+  explicit move (`movetoworkspace`), link (`link-here`), or window close (pruned lazily).
+- Additional state: `_lastActive` (focus restoration), `_zorder` (per-workspace stacking order),
+  `_workspaceHome` (monitor pinning, keyed by stable GDI device name), `_shownByDevice` (what each
+  monitor shows, survives monitor sleep), `_monitors` (live monitor state).
 
 ### 6.2 Monitor Discovery and Initial Assignment
 - Enumerate monitors and order left-to-right.
-- At startup, initialize monitor current workspaces sequentially (`1..N`, bounded by 9).
-- Enumerate windows and assign non-minimized managed windows to their monitor's current workspace.
+- At startup, initialize monitor current workspaces sequentially (leftmost = 1, next = 2, …).
+- **No windows are assigned at startup** — apps open when Winland starts stay unlinked until claimed
+  by a move or link.
 
 ### 6.3 Workspace Switching Semantics
 - `SwitchFocusedMonitorTo(k)`:
@@ -117,10 +132,11 @@
   windows (still assigned to the released workspace), remove the workspace's home binding, set the
   monitor's current workspace to `0` (none shown).
 
-### 6.5 Event-Driven Membership Updates
-- WinEvent hooks for foreground, minimize-end, move-size-end, destroy.
-- If a monitor's current workspace ≥ 1 and a window is activated/restored/moved, assign it to that
-  workspace and update `_lastActive`. Destroy events remove stale handles.
+### 6.5 Window Events
+- A single WinEvent hook (`EVENT_SYSTEM_FOREGROUND`), used only to remember each workspace's
+  last-focused window. **Membership is never mutated by window events**: interaction doesn't
+  re-link, and destroy events are deliberately not hooked (an asynchronous destroy can arrive with a
+  recycled HWND and would unlink the wrong window) — closed windows are pruned lazily instead.
 
 ### 6.6 Guarding Against Self-Induced Events
 - During switch/release, a temporary event guard (~1500ms) ignores the async events our own
@@ -163,16 +179,20 @@ Z-order predecessors; not minimized per its window placement.
 
 ### 8.4 Command Execution Model (`AppLauncher`)
 - Split the command into `verb` + `args`. Resolve, in order:
-  1. `<verb>.ps1` next to the exe → `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '<script>' <args>"` (so a `--` token can pass dash-prefixed args verbatim).
+  1. `<verb>.ps1` next to the exe → `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '<script>' <args>"` (so a `--` token can pass dash-prefixed args verbatim; double quotes in args are escaped).
   2. `<verb>.exe` sibling next to the exe → run directly (how `winlandctl` is found).
-  3. Otherwise → run the whole line as a shell command.
+  3. Otherwise → run the whole line with shell semantics (App Paths, URIs).
+- Scripts and shell commands run with the user's normal token via `UnelevatedLauncher`
+  (`CreateProcessWithTokenW` on the desktop shell's token; shell semantics via an unelevated
+  `cmd /c start`), falling back to an elevated start when that route is unavailable.
 - Failures are swallowed (non-fatal).
 
 ### 8.5 Script Behavior Contracts (Current Defaults)
-- `launch-or-focus.ps1` — focus an existing window of the target process when it isn't already
-  foreground; otherwise launch a new instance.
+- `launch-or-focus.ps1` — `winlandctl focus-app <match>`; on any failure (no window, already
+  foreground, env not running) launch a new instance.
 - `launch-web.ps1` — resolve Chrome/Chromium and launch `--app=<url>`.
-- `show-desktop.ps1` — minimize all eligible top-level windows (mimics `Win+D`).
+- `show-desktop.ps1` — minimize all eligible top-level windows (mimics `Win+D`). Runs unelevated,
+  so elevated apps' windows are left alone (UIPI).
 
 ## 9. Tray and UX Integration Requirements
 
@@ -184,11 +204,13 @@ Z-order predecessors; not minimized per its window placement.
 ## 10. Elevation and Windows Shell Hotkey Conflict Requirements
 
 - Both daemons run elevated (UIPI: a medium-integrity hook can't see input bound for elevated
-  windows; and the elevated `winland-env` pipe must be reachable by the `winlandctl` the elevated
-  keys daemon spawns).
+  windows, and `winland-env` couldn't minimize/restore/focus elevated windows otherwise).
+- Elevation stops at the daemons: apps launched from binds get the user's normal token
+  (`UnelevatedLauncher`), and the pipe ACL admits unelevated `winlandctl` callers.
 - `winland-keys` disables native Win-key hotkeys via the `NoWinKeys` policy (notably Win+number
-  taskbar launch). On a policy change it restarts Explorer to apply immediately; if blocked, it
-  continues without crashing.
+  taskbar launch). On a policy change it restarts Explorer to apply immediately — asking it to exit
+  cleanly first, killing only as fallback, and relying on Windows' `AutoRestartShell` to bring it
+  back unelevated. If the policy key is locked, it continues without crashing.
 - Selected shell behaviors are reintroduced through config binds (e.g. `Win+D` → `show-desktop`,
   `Win+E` → `explorer.exe`).
 
@@ -202,14 +224,20 @@ Z-order predecessors; not minimized per its window placement.
 
 ## 12. Observability Requirements
 
-- Diagnostic log file: `winland-hooklog.txt` next to each executable (`Winland.Common.Log`).
-- `winland-env` logs workspace transitions; `winland-keys`/`HotkeyConfig` logs ignored binds.
+- Diagnostic log file: `winland-hooklog.txt` next to each executable (`Winland.Common.Log`), each
+  line stamped with time and process name (the daemons share the file when co-located); rotated to a
+  single `.old` generation past ~1 MB.
+- `winland-env` logs workspace transitions and focus actions; `winland-keys`/`HotkeyConfig` logs
+  startup status and ignored binds.
 
 ## 13. Security and Operational Considerations
 
 - PowerShell scripts run with `ExecutionPolicy Bypass`; the trust boundary is local config + local
   script files.
 - Registry modification for `NoWinKeys` may require permissions and can be constrained by org policy.
-- The control pipe is local-machine only; commands are accepted from any client that can open it
-  (both daemons run as the same elevated user). Future hardening could add a script allowlist/signing
-  or an optional strict mode.
+- The control pipe is local-machine only, ACL'd to the logged-on user's processes (elevated or not).
+  Accepted trade: any same-user process can drive the window-management verbs — including against
+  elevated windows, via the elevated service. The verbs are deliberately limited to window
+  management; future hardening could add an optional strict (elevated-callers-only) mode.
+- Apps launched from binds run unelevated (desktop-shell token); the fallback to an elevated launch
+  only engages when no unelevated token is obtainable (no shell, UAC off).

@@ -34,17 +34,22 @@ Primary users:
 
 1. **Speed**: Global Win-key combos trigger immediately.
 2. **Predictability**: Workspace actions are monitor-scoped and deterministic.
-3. **Low friction**: Configuration is plain text and reloadable from tray.
-4. **Continuity with Windows**: Standard Win combos can be reintroduced via config after disabling shell Win hotkeys.
+3. **Low friction**: Configuration is plain text; a daemon restart applies it.
+4. **Continuity with Windows**: Standard Win combos can be reintroduced via config after disabling
+   shell Win hotkeys, and launched apps run with the user's normal (unelevated) rights.
 
 ## 5. In-Scope Features (Current)
 
 ### 5.1 Workspaces
-- Numbered workspaces, unbounded (`>= 1`); the shipped config binds `1..9`.
+- Numbered workspaces, unbounded (`>= 1`); the shipped config binds `1..9` and `11..19`.
 - Per-monitor current workspace state.
 - Workspace “home monitor” concept:
   - First entry pins workspace to monitor under cursor.
   - Later switches target that monitor.
+- A window joins a workspace only on explicit move (`Win+Shift+N`) or link (`Win+Space`) — never as a
+  side effect of interacting with it.
+- A roaming **scratchpad** (`Win+S`) that appears on the monitor under the mouse and hides again on
+  the next press.
 - Ability to release current workspace from monitor (`Win+Shift+W`).
 
 ### 5.2 Window Focus
@@ -56,6 +61,7 @@ Primary users:
 - Supports modifiers (`SHIFT`, `ALT`, `CTRL`) plus required `SUPER`.
 - Supports script verbs (`<verb>.ps1`) and normal command execution.
 - `launch-or-focus` behavior requirement: focus an existing instance when it is not currently focused; if already focused, open a new instance.
+- Apps launched from binds run with the user's normal (unelevated) rights.
 - Includes bundled scripts:
   - `launch-or-focus.ps1`
   - `launch-web.ps1`
@@ -63,7 +69,8 @@ Primary users:
 
 ### 5.4 Re-registered Windows Shell Shortcuts
 - Because Winland disables native Win-key shell shortcuts (`NoWinKeys`), selected default Windows behaviors should be explicitly re-registered via config.
-- Current default includes `Win+D` mapped to `show-desktop`, to mimic the original “Show Desktop” behavior.
+- Current defaults include `Win+D` → `show-desktop`, `Win+E` → `explorer.exe`, `Win+R` → the Run
+  dialog (via its shell CLSID), and `Win+Shift+S` → `ms-screenclip:`.
 
 ## 6. User Experience Requirements
 
@@ -82,7 +89,7 @@ Primary users:
 
 ### 6.3 Configurability
 - Non-developer users can edit shortcuts by modifying `config.conf`.
-- Reload operation should apply new binds without app restart.
+- Config is read at startup; restarting the keys daemon (via the start script) applies new binds.
 
 ### 6.4 Stability Expectations
 - Failures in launching apps/scripts or logging should not crash app.

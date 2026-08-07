@@ -41,6 +41,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
+# Resolve -Dir before any elevation: the elevated relaunch starts in System32, where a relative
+# path like .\dist would no longer point at this repo.
+if ($Dir) { $Dir = (Resolve-Path $Dir).Path }
+
 function Test-Admin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole(

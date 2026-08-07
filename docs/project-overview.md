@@ -12,9 +12,14 @@ cooperating tray/CLI processes**, not a single app:
 - **`winlandctl`** — a one-shot CLI that forwards a single command to `winland-env` over its pipe.
 
 Current core capabilities:
-- Per-monitor numbered workspaces (unbounded; `1..9` bound by default)
-- Directional nearest-window focus (`Win+Arrows`) and foreground close (`Win+W`)
-- Configurable app shortcuts from text config (`config.conf`)
+- Per-monitor numbered workspaces (unbounded; `1..9` and `11..19` bound by default), plus a roaming
+  scratchpad (`Win+S`)
+- Moving (`Win+Shift+N`) and linking (`Win+Space`) windows to workspaces — membership changes only on
+  these explicit actions
+- Directional nearest-window focus (`Win+Arrows`), focus-or-launch by process, foreground close
+  (`Win+W`), and show-desktop (`Win+D`)
+- Configurable app shortcuts from text config (`config.conf`), launched with the user's normal
+  (unelevated) token
 
 ## 2. Primary Goals
 
@@ -26,10 +31,12 @@ Current core capabilities:
 
 ## 3. Runtime Experience
 
-- Both daemons start into the system tray (each has its own icon on the primary taskbar).
+- `winland-env` runs in the system tray; `winland-keys` is headless (no tray icon — it logs its
+  startup status instead).
 - `winland-keys` intercepts Super combos and runs each combo's configured command.
 - For workspace/focus combos that command is `winlandctl <verb>`, which reaches `winland-env`.
-- `winland-env`'s tray icon displays the workspace currently shown on the primary monitor.
+- `winland-env`'s tray icon displays the workspace currently shown on the primary monitor ("S" for
+  the scratchpad, a dash when that monitor shows no workspace).
 
 ## 4. The Super-key flow
 
@@ -43,14 +50,20 @@ the keys daemon. `winland-env` only ever acts on commands that arrive on its pip
 ## 5. Feature Summary
 
 ### 5.1 Workspaces
-- `Win+1..9` switches/focuses a workspace (`winlandctl workspace N`).
+- `Win+1..9` switches/focuses a workspace (`winlandctl workspace N`); `Win+Alt+1..9` reaches 11..19.
+- `Win+Shift+N` moves the focused window to workspace N (`winlandctl movetoworkspace N`);
+  `Win+Space` links it to the current workspace without moving it (`winlandctl link-here`).
+- `Win+S` toggles the roaming scratchpad on the mouse monitor (`winlandctl scratchpad`).
 - Workspaces are pinned to a home monitor after first use.
 - `Win+Shift+W` releases the current workspace from its monitor (`winlandctl workspace-release`).
 
 ### 5.2 Window Focus
 - `Win+Left/Up/Right/Down` focuses the nearest candidate window by direction
   (`winlandctl focus <dir>`).
+- `winlandctl focus-app <process>` focuses an app's window by process name (used by the
+  launch-or-focus binds).
 - `Win+W` sends a close request to the foreground window (`winlandctl close`).
+- `Win+D` minimizes every window (the `show-desktop.ps1` script).
 
 ### 5.3 App Shortcuts
 - User-defined `bind = ...` lines in `config.conf`.
@@ -95,7 +108,8 @@ Both daemons must run, both elevated (UIPI + the elevated control pipe require i
 src/Winland.Common/   Ipc.cs, Log.cs                       shared pipe protocol + logging
 src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          hotkey daemon (the only keyboard hook)
                       Config.cs, HotkeyConfig.cs,
-                      AppLauncher.cs, WindowsHotkeyDisabler.cs
+                      AppLauncher.cs, UnelevatedLauncher.cs,
+                      WindowsHotkeyDisabler.cs
 src/winland-env/      EnvApp.cs, DispatchServer.cs,         environment service (pipe-driven)
                       UiInvoker.cs, Dispatcher.cs,
                       WorkspaceManager.cs, WindowNavigator.cs, TrayIcon.cs

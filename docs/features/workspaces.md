@@ -2,126 +2,137 @@
 
 ## 1. Objective
 
-Provide deterministic, per-monitor workspace management where each monitor displays one workspace at a time and workspace windows are restored/minimized as users switch contexts.
+Provide deterministic, per-monitor workspace management where each monitor displays one workspace at
+a time and workspace windows are restored/minimized as users switch contexts.
 
 Workspaces live in the **`winland-env`** service. They are driven over the control pipe: the
 `winland-keys` daemon runs the bind `winlandctl workspace N`, `winlandctl` forwards `workspace N` to
 `winland-env`, and the `Dispatcher` calls into `WorkspaceManager`. The keys daemon itself has no
 workspace logic. (See `architecture-overview.md`.)
 
-## 2. Primary User Flows
+## 2. Membership Model (the core rule)
 
-### 2.1 Switch to Workspace N (`Win+1..9`)
-1. User presses Win+N.
-2. `winland-keys` runs the matching bind's command, `winlandctl workspace N`.
-3. `winlandctl` sends `workspace N` over the pipe; `winland-env`'s `Dispatcher` calls
-   `WorkspaceManager.SwitchFocusedMonitorTo(N)`.
-4. Workspace home monitor is resolved:
-   - Existing home: use it.
-   - No home: pin to monitor under cursor.
-5. If workspace already active on home monitor:
-   - Focus workspace window.
-6. Else:
-   - Minimize outgoing windows on that monitor.
-   - Move/restore workspace N windows onto that monitor.
-   - Set monitor current workspace to N.
-   - Focus workspace N target window.
+`_windowWorkspace` (window handle → workspace number) is the single source of truth, and it changes
+**only on explicit user action**:
 
-### 2.2 Release Current Workspace (`Win+Shift+W`)
-0. `winland-keys` runs `winlandctl workspace-release`; `winland-env` calls `ReleaseCurrentWorkspace()`.
-1. Active monitor determined from cursor position.
-2. Current workspace on that monitor is minimized away.
-3. Workspace home binding removed.
-4. Monitor current set to `0` (no workspace displayed).
-5. Next Win+N from any monitor can re-home that workspace.
+- **Move** (`Win+Shift+N` → `movetoworkspace N`) — unlink from the old workspace, link to N.
+- **Link** (`Win+Space` → `link-here`) — link to the workspace currently shown on the window's
+  monitor (a no-op when that monitor shows no workspace).
+- **Close** — closed windows are pruned *lazily* in `WindowsOf` (when membership is next read).
+
+Nothing else mutates membership. In particular:
+- **No windows are assigned at startup** — apps that are open when Winland starts stay unlinked until
+  claimed.
+- **Interaction never re-links** — activating, restoring, maximizing, or dragging a window does not
+  pull it into a workspace.
+- **No destroy-event hook** — `EVENT_OBJECT_DESTROY` is delivered asynchronously and can arrive with
+  a recycled HWND that now belongs to a different, still-open window; acting on it would silently
+  unlink that window. Hence the lazy pruning above.
+
+The only WinEvent hook is `EVENT_SYSTEM_FOREGROUND`, used solely to remember each workspace's
+last-focused window (for focus restore on switch).
 
 ## 3. State Model
 
 ### 3.1 Core State Containers
-- `_windowWorkspace`: window handle -> workspace number.
-- `_lastActive`: workspace -> last active window.
-- `_workspaceHome`: workspace -> home monitor handle.
-- `_monitors`: monitor handle -> monitor state (`Current`, work area, primary flag).
+- `_windowWorkspace`: window handle → workspace number (see §2).
+- `_lastActive`: workspace → last active window (focus restore).
+- `_zorder`: workspace → its windows top-to-bottom, captured when the workspace is put away, so the
+  same stacking order (and frontmost window) comes back on return.
+- `_workspaceHome`: workspace → home monitor, stored as the stable GDI **device name**
+  (`\\.\DISPLAYn`), *not* an HMONITOR — handles are reissued on sleep/wake/display changes.
+- `_shownByDevice`: device name → the workspace shown on that monitor; survives a monitor dropping
+  out of enumeration (sleep), so a wake restores what it was showing.
+- `_monitors`: HMONITOR → live monitor state; rebuilt from enumeration before every operation.
 
 ### 3.2 Invariants
-1. Workspace ids are any whole number `>= 1` (not capped; the shipped config binds 1..9).
-2. A monitor’s `Current` is either `0` (released/none) or a workspace id `>= 1`.
-3. `_windowWorkspace` is authoritative for membership.
-4. Switching workspace on one monitor does not mutate `Current` of other monitors.
+1. Workspace ids are any whole number `>= 1` — **not capped**. The shipped config binds 1..9 and
+   11..19; any other number is reachable via `winlandctl workspace <n>`.
+2. `int.MaxValue` is reserved for the scratchpad and is rejected by the `workspace` /
+   `movetoworkspace` verbs.
+3. A monitor's `Current` is either `0` (released/none) or a workspace id `>= 1`.
+4. `_windowWorkspace` is authoritative for membership.
+5. Switching a workspace on one monitor does not mutate `Current` of other monitors.
+6. A workspace is shown on at most one monitor at a time (`SetShown` clears any other claim).
 
 ## 4. Startup Behavior
 
-`Rebuild()` initializes runtime model:
+`Rebuild()` initializes the runtime model:
 - Enumerates monitors and sorts left-to-right.
-- Seeds each monitor with initial workspace number (`1..N`, max 9).
-- Seeds `_workspaceHome` for those initial assignments.
-- Enumerates non-minimized managed windows and assigns each to its monitor’s current workspace.
+- Seeds each monitor with a workspace (leftmost = 1, next = 2, …) and homes those workspaces to
+  their monitors.
+- **Assigns no windows** (see §2).
 
-## 5. Window Assignment Rules
+## 5. Managed Window Eligibility
 
-### 5.1 Managed Window Eligibility
-A window is considered managed if:
-- It exists and is visible or minimized.
-- It is top-level (no owner window).
-- It has non-empty title text.
-- It is not a tool window (`WS_EX_TOOLWINDOW`).
-- It is not cloaked.
-- It is not shell desktop window class (`Progman`/`WorkerW`).
+A window is considered managed if it exists and is visible or minimized, is top-level (no owner),
+has non-empty title text, is not a tool window (`WS_EX_TOOLWINDOW`), is not DWM-cloaked, and is not a
+shell desktop window (`Progman`/`WorkerW`).
 
-### 5.2 Runtime Re-assignment by User Activity
-Via WinEvent hooks:
-- Foreground, restore (minimize-end), or move-size-end causes window to join the currently shown workspace on its monitor (if current workspace >= 1).
-- Destroy event removes window from membership map.
+## 6. Switch Mechanics (`SwitchFocusedMonitorTo(k)`)
 
-## 6. Switch Mechanics Details
+1. `RefreshMonitors()` reconciles cached monitor state with the live display configuration (device
+   names keep identity across HMONITOR reissue; a sleeping monitor keeps its shown workspace).
+2. `ResolveHome(k)`: use k's home monitor if present. If the home monitor is asleep/disconnected,
+   show k on the mouse monitor *without* re-homing it. First-ever use pins k's home to the mouse
+   monitor.
+3. If k is **already shown** on its home monitor (a re-press), *re-assert*: restore minimized
+   members and pull back windows dragged onto other monitors; windows already visible on the monitor
+   keep their current place and stacking.
+4. On a **real switch**: capture the outgoing workspace's z-order, minimize everything on the monitor
+   that isn't k's (membership untouched), restore k's windows onto the monitor, re-apply k's captured
+   z-order, record k as shown, and focus k's last-active window.
+5. A ~1.5 s event guard brackets the operation so our own minimize/restore events don't feed back
+   into `_lastActive` (see §9).
 
-### 6.1 Minimize Outgoing Monitor Windows
-`MinimizeMonitorWindows(monitor, assignTo, keep)`:
-- Iterates visible managed windows physically on target monitor.
-- Skips windows belonging to `keep` workspace.
-- Assigns others to `assignTo` workspace and minimizes them.
+## 7. Release Semantics (`Win+Shift+W` → `workspace-release`)
 
-### 6.2 Forget User-Minimized Stale Members
-`ForgetMinimizedMembers(assignTo)` removes minimized/non-existent windows from outgoing workspace before minimizing visible members.
+Acts on the monitor under the cursor: minimize every window there, remove the workspace's home
+pinning, set the monitor's `Current` to 0 (tray shows a dash). Members stay linked, so `Win+N` on any
+monitor later re-homes the workspace there and brings them back. Releasing while the **scratchpad**
+is shown puts the scratchpad's windows away and clears its return workspace instead (the scratchpad
+never has a home to unpin).
 
-Intent: if user manually minimized a window earlier, it should not reappear automatically when returning to workspace.
+## 8. The Scratchpad (`Win+S` → `scratchpad`)
 
-### 6.3 Restore Workspace Windows
-`ShowWorkspaceOnMonitor(workspace, monitor)`:
-- Enumerates windows assigned to workspace.
-- Moves each to monitor while preserving relative placement/maximized state.
-- Restores visibility through placement/show operations.
+A roaming workspace reserved at `int.MaxValue` with **no home monitor**:
+- Toggle on: appears on the monitor under the mouse, remembering what that monitor showed
+  (`_scratchpadReturn`); toggle off restores it.
+- Toggling while it is up on *another* monitor first sends that monitor back to its previous
+  workspace, then brings the scratchpad (and its windows) to the mouse monitor.
+- Windows attach to it like any workspace: focus one while the scratchpad is shown and press
+  `Win+Space`.
 
-## 7. Focus Restoration Rules
+## 9. Focus Restoration and Event Guarding
 
-`FocusWorkspace(workspace)` target priority:
-1. `_lastActive[workspace]` if still valid, non-minimized, and still assigned.
-2. First non-minimized window in workspace.
+`FocusWorkspace` prefers `_lastActive[workspace]` (if still valid, non-minimized, and still a
+member), else the first non-minimized member. Focus uses temporary foreground-lock-timeout
+suppression (never `AttachThreadInput`).
 
-Focus uses temporary foreground-lock timeout suppression to improve reliability.
+Workspace operations generate window events asynchronously; a guard period (~1500 ms) around each
+operation makes the foreground hook ignore them. Because a click made *during* the guard can be
+missed, `CaptureZOrder` trusts the live frontmost window over `_lastActive` when a workspace is put
+away.
 
-## 8. Event Guarding and Race Prevention
+## 10. Primary Monitor Integration
 
-Workspace operations generate window events asynchronously. To avoid self-induced reassignment corruption:
-- Manager sets guard period (`~1500ms`) around switch/release operations.
-- During guard, event callback ignores assignment events.
+`PrimaryWorkspaceChanged` emits the workspace shown on the **primary** monitor; the tray icon
+subscribes. The scratchpad shows as "S", a released (empty) monitor as a dash.
 
-## 9. Primary Monitor Integration
+## 11. Known Constraints
 
-- `PrimaryWorkspaceChanged` event emits current workspace displayed on primary monitor.
-- Tray icon subscribes and updates indicator accordingly.
-- This avoids displaying workspace from non-primary monitor when user triggers actions elsewhere.
-
-## 10. Known Constraints
-
-- Fixed workspace count (9).
-- Workspace state is in-memory only; no persistence across app restarts.
+- Workspace state is in-memory only; no persistence across restarts.
+- Membership is keyed by HWND; Windows recycles handles, so a stale entry could in principle be
+  inherited by an unrelated new window until pruning runs. Accepted trade for the simplicity of the
+  lazy-prune model.
 - Behavior depends on Win32 window semantics; some app window types can behave unusually.
 
-## 11. Extension Guidance
+## 12. Extension Guidance
 
 When changing workspace logic:
 1. Preserve monitor isolation semantics.
-2. Preserve `_windowWorkspace` as single membership authority.
-3. Reassess guard timing if introducing async/longer operations.
-4. Update tray integration if primary workspace signal semantics change.
+2. Preserve `_windowWorkspace` as the single membership authority — and keep membership mutations
+   explicit-only (§2).
+3. Key any new per-monitor state on device names, not HMONITORs.
+4. Reassess guard timing if introducing async/longer operations.
+5. Update tray integration if primary workspace signal semantics change.

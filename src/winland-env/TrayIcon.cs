@@ -66,8 +66,12 @@ internal sealed class TrayIcon : IDisposable
                 g.FillEllipse(bg, 1, 1, 30, 30);
 
                 using var fg = new SolidBrush(Color.Black);
-                // Shrink the glyph so multi-digit workspace numbers still fit the 32px circle.
-                string text = workspace.ToString();
+                // Shrink the glyph so multi-digit workspace numbers still fit the 32px circle. The
+                // scratchpad has no number — show "S"; a monitor showing no workspace (< 1, after a
+                // release) shows a dash.
+                string text = workspace == WorkspaceManager.ScratchpadWorkspace ? "S"
+                    : workspace >= 1 ? workspace.ToString()
+                    : "–";
                 float emSize = text.Length switch { <= 1 => 19f, 2 => 14f, _ => 10f };
                 using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
                 using var format = new StringFormat
@@ -81,7 +85,9 @@ internal sealed class TrayIcon : IDisposable
             IntPtr hIcon = bmp.GetHicon();
             var icon = Icon.FromHandle(hIcon);
             _notifyIcon.Icon = icon;
-            _notifyIcon.Text = $"Winland — workspace {workspace}";
+            _notifyIcon.Text = workspace == WorkspaceManager.ScratchpadWorkspace ? "Winland — scratchpad"
+                : workspace >= 1 ? $"Winland — workspace {workspace}"
+                : "Winland — no workspace";
 
             // Release the previously shown icon (Icon.FromHandle does not own the HICON).
             _currentIcon?.Dispose();

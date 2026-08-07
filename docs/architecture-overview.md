@@ -69,12 +69,16 @@ For unclaimed combos (`actionId == 0`) the hook passes the key through to the OS
   while Win is held, calls the resolver.
 - Swallows claimed combos and dispatches the action id to the UI thread via a hidden message window.
 
-### 3.4 `AppLauncher`
+### 3.4 `AppLauncher` and `UnelevatedLauncher`
 - Splits a bind's command into `verb` + `args` and resolves the verb, in order:
   1. `<verb>.ps1` next to the exe → run via `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '<script>' <args>"`.
-  2. `<verb>.exe` sibling next to the exe → run directly (**how `winlandctl` is found**; as a child of
-     the elevated keys daemon it inherits elevation and can reach the pipe).
-  3. Otherwise → run the whole line as a shell command.
+  2. `<verb>.exe` sibling next to the exe → run directly (**how `winlandctl` is found**).
+  3. Otherwise → run the whole line as a shell command (App Paths names, URIs, documents).
+- Scripts and shell commands are launched with the user's **normal (unelevated) token** via
+  `UnelevatedLauncher`, which duplicates the desktop shell's token (`CreateProcessWithTokenW`) —
+  otherwise every app a bind starts would inherit the daemon's elevation. Shell semantics come from
+  an unelevated `cmd /c start "" <command>`. If the unelevated route is unavailable (no shell, UAC
+  off), the launch falls back to a plain elevated start.
 - All launch failures are swallowed.
 
 ### 3.5 `Config` / `HotkeyConfig`
@@ -107,17 +111,24 @@ It has **no keyboard hook**: every action originates from the pipe.
 ### 4.4 `Dispatcher`
 - The single source of truth for what the environment can do. Maps a verb to an operation and returns
   the protocol response:
-  - `workspace <n>` (n >= 1) → `WorkspaceManager.SwitchFocusedMonitorTo`
+  - `workspace <n>` (n >= 1, scratchpad id rejected) → `WorkspaceManager.SwitchFocusedMonitorTo`
+  - `movetoworkspace <n>` → `WorkspaceManager.MoveFocusedWindowToWorkspace`
+  - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace`
+  - `scratchpad` → `WorkspaceManager.ToggleScratchpad`
   - `workspace-release` → `WorkspaceManager.ReleaseCurrentWorkspace`
   - `focus <left|right|up|down>` → `WindowNavigator.FocusNearest`
+  - `focus-app <process>` → `WindowNavigator.FocusApp` (`ERR` when there is nothing to focus)
   - `close` → `WindowNavigator.CloseForeground`
   - unknown → `ERR unknown verb '<verb>'`
 
 ### 4.5 `WorkspaceManager` / `WindowNavigator` / `TrayIcon`
-- `WorkspaceManager` — monitor/workspace/window mappings, switch/release semantics, WinEvent-driven
-  membership reassignment, and the `PrimaryWorkspaceChanged` event.
-- `WindowNavigator` — directional nearest-window focus and foreground close.
-- `TrayIcon` — runtime-drawn numbered icon for the primary monitor's workspace.
+- `WorkspaceManager` — monitor/workspace/window mappings, switch/move/link/scratchpad/release
+  semantics, and the `PrimaryWorkspaceChanged` event. Membership changes **only** on explicit move,
+  link, or close — never from window interaction (see `features/workspaces.md`).
+- `WindowNavigator` — directional nearest-window focus, focus-by-process (`focus-app`), and
+  foreground close.
+- `TrayIcon` — runtime-drawn numbered icon for the primary monitor's workspace ("S" for the
+  scratchpad, a dash when the monitor shows no workspace).
 
 ## 5. `winlandctl` — the control CLI
 
@@ -131,6 +142,10 @@ It has **no keyboard hook**: every action originates from the pipe.
 - Transport: a local named pipe, `\\.\pipe\winland-env` (`Ipc.PipeName`).
 - Line-based: the client writes one command line; the server replies with a single line — `OK`
   (`Ipc.Ok`) on success, or `ERR <message>` (`Ipc.ErrPrefix`) on failure.
+- The pipe carries an explicit ACL granting the logged-on user's processes access, elevated or not —
+  so unelevated scripts and terminals can run `winlandctl` (see §7.4).
+- A connected client that never sends its line is dropped after a read timeout, so it cannot wedge
+  the single-connection server.
 
 ## 7. Cross-Cutting Concerns
 
@@ -148,8 +163,12 @@ It has **no keyboard hook**: every action originates from the pipe.
 
 ### 7.4 Elevation
 - Both daemons request administrator rights (app manifests). Elevation is needed for the hook to see
-  input bound for elevated windows (UIPI) and so the elevated `winland-env` pipe is reachable by the
-  `winlandctl` the (elevated) keys daemon spawns.
+  input bound for elevated windows, and for `winland-env` to minimize/restore/focus elevated windows
+  (UIPI).
+- That elevation stops at the daemons: apps launched by binds run with the user's normal token
+  (`UnelevatedLauncher`), and the control pipe explicitly admits unelevated clients. The trade of the
+  pipe ACL: any same-user process can drive the window-management verbs; the verbs are deliberately
+  limited to window management.
 
 ### 7.5 Windows Integration
 - Heavy Win32/DWM interop for windows, monitors, focus, hooks, and DWM attributes.
@@ -164,6 +183,8 @@ It has **no keyboard hook**: every action originates from the pipe.
 5. **Command-resolution launcher** (script / sibling exe / shell) for extensible binds without
    recompiling — and the mechanism by which the keys daemon reaches `winlandctl`.
 6. **Policy-based Win hotkey suppression** (`NoWinKeys`) to avoid shell conflicts.
+7. **Elevation stops at the daemons** — launched apps get the user's normal token
+   (`UnelevatedLauncher`), and the pipe ACL admits unelevated `winlandctl` callers.
 
 ## 9. Known Architectural Constraints
 

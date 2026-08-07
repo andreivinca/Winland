@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Win32;
 
 namespace Winland.Keys;
@@ -35,18 +37,36 @@ internal static class WindowsHotkeyDisabler
         }
     }
 
+    /// <summary>
+    /// Restart the shell so it re-reads the policy. Happens at most once, when the policy value
+    /// actually changed. Explorer is asked to exit CLEANLY first (the same message as the taskbar's
+    /// Ctrl+Shift+right-click "Exit Explorer"), so it saves its state; killing is only the fallback.
+    /// Windows itself restarts the exited shell (AutoRestartShell, on by default) with the user's
+    /// normal token — we start one ourselves only if that doesn't happen.
+    /// </summary>
     private static void RestartExplorer()
     {
         try
         {
-            foreach (Process p in Process.GetProcessesByName("explorer"))
+            IntPtr taskbar = FindWindow("Shell_TrayWnd", null);
+            if (taskbar != IntPtr.Zero)
             {
-                try { p.Kill(); } catch { /* ignored */ }
+                PostMessage(taskbar, WM_USER + 436, IntPtr.Zero, IntPtr.Zero);
             }
 
-            System.Threading.Thread.Sleep(1200);
-            if (Process.GetProcessesByName("explorer").Length == 0)
+            if (!WaitFor(() => Process.GetProcessesByName("explorer").Length == 0, timeoutMs: 3000))
             {
+                foreach (Process p in Process.GetProcessesByName("explorer"))
+                {
+                    try { p.Kill(); } catch { /* ignored */ }
+                }
+            }
+
+            if (!WaitFor(() => Process.GetProcessesByName("explorer").Length > 0, timeoutMs: 3000))
+            {
+                // Last resort, e.g. AutoRestartShell disabled. Started from this elevated process the
+                // shell would inherit elevation, but with no shell running there is no unelevated token
+                // left to borrow — an elevated shell beats no shell.
                 Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true });
             }
         }
@@ -55,4 +75,31 @@ internal static class WindowsHotkeyDisabler
             // ignored
         }
     }
+
+    /// <summary>Poll <paramref name="condition"/> until it holds or the timeout passes.</summary>
+    private static bool WaitFor(Func<bool> condition, int timeoutMs)
+    {
+        int deadline = Environment.TickCount + timeoutMs;
+        while (!condition())
+        {
+            if (Environment.TickCount - deadline >= 0)
+            {
+                return false;
+            }
+
+            Thread.Sleep(100);
+        }
+
+        return true;
+    }
+
+    // ----- Win32 -----
+
+    private const int WM_USER = 0x0400;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string lpClassName, string? lpWindowName);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 }

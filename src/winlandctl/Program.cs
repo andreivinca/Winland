@@ -36,7 +36,7 @@ try
         return 1;
     }
 
-    if (response.StartsWith(Ipc.Ok, StringComparison.Ordinal))
+    if (response == Ipc.Ok)
     {
         return 0;
     }
@@ -47,6 +47,11 @@ try
 catch (TimeoutException)
 {
     Console.Error.WriteLine("winlandctl: winland-env is not running (connect timed out)");
+    return 3;
+}
+catch (UnauthorizedAccessException)
+{
+    Console.Error.WriteLine("winlandctl: access to the winland-env pipe was denied (different user?)");
     return 3;
 }
 catch (Exception ex)
