@@ -644,14 +644,14 @@ internal sealed partial class WorkspaceManager : IDisposable
     private void FocusWorkspace(int workspace)
     {
         IntPtr target = IntPtr.Zero;
-        if (_lastActive.TryGetValue(workspace, out IntPtr last) && IsWindow(last) && !IsIconic(last)
+        if (_lastActive.TryGetValue(workspace, out IntPtr last) && IsWindow(last) && IsOnScreen(last)
             && _windowWorkspace.TryGetValue(last, out int ws) && ws == workspace)
         {
             target = last;
         }
         else
         {
-            target = WindowsOf(workspace).FirstOrDefault(h => !IsIconic(h));
+            target = WindowsOf(workspace).FirstOrDefault(IsOnScreen);
         }
 
         if (target != IntPtr.Zero)
@@ -660,6 +660,11 @@ internal sealed partial class WorkspaceManager : IDisposable
             _lastActive[workspace] = target;
         }
     }
+
+    // Shown and not minimized: not hidden by its app (closed to the tray), and not cloaked by the shell —
+    // which keeps WS_VISIBLE on a closed Store app, a closed shell panel, or a window on another virtual
+    // desktop while nothing of it is on screen.
+    private static bool IsOnScreen(IntPtr hWnd) => IsWindowVisible(hWnd) && !IsIconic(hWnd) && !IsWindowCloaked(hWnd);
 
     // Bring a window to the foreground. We avoid AttachThreadInput (it can corrupt keyboard input
     // state when attaching to the shell thread); briefly clearing the foreground-lock timeout is safe.
@@ -745,10 +750,14 @@ internal sealed partial class WorkspaceManager : IDisposable
             return false;
         }
 
-        return !IsWindowCloaked(hWnd) && !IsDesktopWindow(hWnd);
+        return !IsWindowCloaked(hWnd) && !IsShellWindow(hWnd);
     }
 
-    private static bool IsDesktopWindow(IntPtr hWnd)
+    // The desktop, and the shell's own panels: Start, Search, notifications and the touch keyboard are all
+    // top-level CoreWindows. Open, they look like app windows (titled, unowned, not tool windows); closed,
+    // the shell cloaks them instead of hiding them — so a linked one would hold an invisible column.
+    // (A Store app's tileable window is its ApplicationFrameWindow, not a top-level CoreWindow.)
+    private static bool IsShellWindow(IntPtr hWnd)
     {
         var className = new StringBuilder(256);
         int length = GetClassName(hWnd, className, className.Capacity);
@@ -759,7 +768,8 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         string name = className.ToString(0, length);
         return string.Equals(name, "Progman", StringComparison.Ordinal)
-            || string.Equals(name, "WorkerW", StringComparison.Ordinal);
+            || string.Equals(name, "WorkerW", StringComparison.Ordinal)
+            || string.Equals(name, "Windows.UI.Core.CoreWindow", StringComparison.Ordinal);
     }
 
     private static bool IsWindowCloaked(IntPtr hWnd)

@@ -51,8 +51,9 @@ Partially visible tiles at the edges (smooth scrolling) would need per-window cl
 
 `_tileOrder` (workspace → members left to right) is **ordering metadata only**: `_windowWorkspace` stays
 the membership authority, and `TilesOf` reconciles the order with it on every read (closed windows
-pruned, unknown members appended). Floating members, and members that their app has hidden (closed to
-the tray), keep their place in the order but take no column.
+pruned, unknown members appended). Floating members, members that their app has hidden (closed to the
+tray), and members the shell has cloaked (a closed Store app, a window on another virtual desktop) keep
+their place in the order but take no column.
 
 | Command | Behaviour |
 | --- | --- |
@@ -76,13 +77,13 @@ tile if focus or its position changed and the cursor isn't over it already (`Cur
 
 ## 4. Reacting to Window Events
 
-`InstallTileHooks` adds `EVENT_OBJECT_DESTROY..EVENT_OBJECT_HIDE` (destroy, show, hide) and
-`EVENT_SYSTEM_MOVESIZEEND` to the existing foreground hook. Only events on **tiles** are considered;
-floating members are left to Windows.
+`InstallTileHooks` adds `EVENT_OBJECT_DESTROY..EVENT_OBJECT_HIDE` (destroy, show, hide),
+`EVENT_OBJECT_CLOAKED..EVENT_OBJECT_UNCLOAKED` and `EVENT_SYSTEM_MOVESIZEEND` to the existing foreground
+hook. Only events on **tiles** are considered; floating members are left to Windows.
 
 | Event | Reaction |
 | --- | --- |
-| destroy / hide / show | Re-lay out the tile's workspace (its column closes or opens). |
+| destroy / hide / show / cloak / uncloak | Re-lay out the tile's workspace (its column closes or opens). |
 | foreground on a tile out of view | Scroll its strip to it (subject to the workspace event guard). |
 | move/size end | **Float** (`FloatIfMoved`): unless the tile's visible frame is still within 2 px of its column (a click on the title bar), or it is maximized or minimized (states of the tile, not moves), it joins `_floating` where it was dropped and the strip closes the gap. |
 

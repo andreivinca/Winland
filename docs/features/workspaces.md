@@ -77,7 +77,9 @@ keep it in view); the tiling hooks are described in `tiling.md` §4.
 
 A window is considered managed if it exists and is visible or minimized, is top-level (no owner),
 has non-empty title text, is not a tool window (`WS_EX_TOOLWINDOW`), is not DWM-cloaked, and is not a
-shell desktop window (`Progman`/`WorkerW`).
+shell window: the desktop (`Progman`/`WorkerW`) or a shell panel (`Windows.UI.Core.CoreWindow` — Start,
+Search, notifications, the touch keyboard). Shell panels look like app windows while open, but the
+shell cloaks rather than hides them when they close, so a linked one would keep an invisible tile.
 
 ## 6. Switch Mechanics (`SwitchFocusedMonitorTo(k)`)
 

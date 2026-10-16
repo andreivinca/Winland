@@ -181,8 +181,11 @@ on the command pipe.
 
 ### 6.5 Window Events
 - `EVENT_SYSTEM_FOREGROUND` remembers each workspace's last-focused tile and scrolls a strip to a tile
-  focused by hand. `EVENT_OBJECT_DESTROY..HIDE` and `EVENT_SYSTEM_MOVESIZEEND` on tiles re-lay out or
-  drop them (`features/tiling.md` §4), via a 50 ms UI-thread timer — never inside the hook callback.
+  focused by hand. `EVENT_OBJECT_DESTROY..HIDE`, `EVENT_OBJECT_CLOAKED..UNCLOAKED` and
+  `EVENT_SYSTEM_MOVESIZEEND` on tiles re-lay out or float them (`features/tiling.md` §4), via a 50 ms
+  UI-thread timer — never inside the hook callback. A hidden or cloaked tile takes no column.
+- Shell panels (`Windows.UI.Core.CoreWindow`: Start, Search, notifications, touch keyboard) are never
+  managed, so they can't be linked.
 - **Membership is never mutated by window events**: interaction doesn't re-link, and a destroy event
   only triggers a layout (an asynchronous destroy can arrive with a recycled HWND, so its handle is
   never acted on) — closed windows are pruned lazily instead.

@@ -93,7 +93,7 @@ internal sealed partial class WorkspaceManager
         ReflowShown(left);
         GuardEvents();
 
-        LogTiles($"link {WsLabel(workspace)}", workspace);
+        LogTiles($"link {WsLabel(workspace)}", workspace, hWnd);
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ internal sealed partial class WorkspaceManager
         ForceForeground(hWnd); // above the tiles that just moved in under it
         GuardEvents();
 
-        LogTiles($"unlink {WsLabel(workspace)}", workspace);
+        LogTiles($"unlink {WsLabel(workspace)}", workspace, hWnd);
     }
 
     /// <summary>
@@ -199,7 +199,7 @@ internal sealed partial class WorkspaceManager
         {
             _tileOrder[workspace] = TileOrder.MoveTo(OrderOf(workspace), hWnd, tiles[next]);
             LayoutWorkspace(workspace, home, hWnd);
-            LogTiles($"move tile {direction.ToString().ToLowerInvariant()}", workspace);
+            LogTiles($"move tile {direction.ToString().ToLowerInvariant()}", workspace, hWnd);
             return;
         }
 
@@ -224,7 +224,7 @@ internal sealed partial class WorkspaceManager
         ReflowShown(left);
         ForceForeground(hWnd);
 
-        LogTiles($"move tile to {WsLabel(workspace)}", workspace);
+        LogTiles($"move tile to {WsLabel(workspace)}", workspace, hWnd);
     }
 
     /// <summary>
@@ -271,14 +271,15 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// A workspace's tiles that take a column, left to right. Reconciles the stored order with membership
-    /// first (closed windows are pruned there). Floating members, and members their app has hidden (closed
-    /// to the tray), keep their place in the order but take no column.
+    /// first (closed windows are pruned there). Floating members, members their app has hidden (closed to
+    /// the tray), and members the shell has cloaked (a closed Store app, a window on another virtual
+    /// desktop) keep their place in the order but take no column — nothing of them is on screen.
     /// </summary>
     private List<IntPtr> TilesOf(int workspace)
     {
         List<IntPtr> order = TileOrder.Reconcile(OrderOf(workspace), WindowsOf(workspace));
         _tileOrder[workspace] = order;
-        return order.Where(h => !_floating.Contains(h) && IsWindowVisible(h)).ToList();
+        return order.Where(h => !_floating.Contains(h) && IsWindowVisible(h) && !IsWindowCloaked(h)).ToList();
     }
 
     /// <summary>The tile that should have focus in a workspace: its last-active tile, while it is still one.</summary>
@@ -286,6 +287,7 @@ internal sealed partial class WorkspaceManager
         _lastActive.TryGetValue(workspace, out IntPtr last)
         && IsWindow(last)
         && IsWindowVisible(last)
+        && !IsWindowCloaked(last)
         && _windowWorkspace.TryGetValue(last, out int owner)
         && owner == workspace
             ? last
@@ -522,10 +524,13 @@ internal sealed partial class WorkspaceManager
     {
         _reflowTimer.Tick += OnReflowTick;
 
-        // DESTROY..HIDE (also SHOW, between them): a tile closed, was hidden, or came back. These events
-        // only ever trigger a layout: membership itself is still pruned lazily (WindowsOf), so a late event
-        // carrying a recycled handle costs at most a needless layout, never a window's membership.
+        // DESTROY..HIDE (also SHOW, between them): a tile closed, was hidden, or came back; CLOAKED/UNCLOAKED:
+        // the shell took it off screen or put it back (a Store app closed or reopened, a virtual-desktop
+        // switch). These events only ever trigger a layout: membership itself is still pruned lazily
+        // (WindowsOf), so a late event carrying a recycled handle costs at most a needless layout, never a
+        // window's membership.
         AddHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, _winEventHooks);
+        AddHook(EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED, _winEventHooks);
         // The user finished dragging or resizing a window.
         AddHook(EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZEEND, _winEventHooks);
     }
@@ -553,6 +558,8 @@ internal sealed partial class WorkspaceManager
             case EVENT_OBJECT_DESTROY:
             case EVENT_OBJECT_SHOW:
             case EVENT_OBJECT_HIDE:
+            case EVENT_OBJECT_CLOAKED:
+            case EVENT_OBJECT_UNCLOAKED:
                 QueueReflow(workspace, IntPtr.Zero); // open or close its column
                 break;
 
@@ -630,7 +637,7 @@ internal sealed partial class WorkspaceManager
         Relink(hWnd, workspace, OrderJoining(workspace, hWnd));
         LayoutWorkspace(workspace, monitor, hWnd);
 
-        LogTiles($"tile launched {WsLabel(workspace)}", workspace);
+        LogTiles($"tile launched {WsLabel(workspace)}", workspace, hWnd);
     }
 
     /// <summary>
@@ -658,7 +665,7 @@ internal sealed partial class WorkspaceManager
         _floating.Add(hWnd);
         ReflowShown(workspace);
 
-        LogTiles($"float {WsLabel(workspace)}", workspace);
+        LogTiles($"float {WsLabel(workspace)}", workspace, hWnd);
     }
 
     /// <summary>The window's visible frame on screen (without the invisible resize border), or null if minimized.</summary>
@@ -673,10 +680,29 @@ internal sealed partial class WorkspaceManager
         return new TileRect(frame.Left, frame.Top, frame.Right, frame.Bottom);
     }
 
-    private void LogTiles(string action, int workspace)
+    private void LogTiles(string action, int workspace, IntPtr window)
     {
         int count = _arranged.TryGetValue(workspace, out Arrangement? arranged) ? arranged.Tiles.Length : 0;
-        Log.Line($"[{action}] {WsLabel(workspace)}: {count} tile(s), view from tile {_scrollFirst.GetValueOrDefault(workspace) + 1}");
+        Log.Line($"[{action}] {WsLabel(workspace)}: {ProcessNameOf(window)}; {count} tile(s), view from tile {_scrollFirst.GetValueOrDefault(workspace) + 1}");
+    }
+
+    // Which app a window belongs to, for the log — so a surprising tile can be traced to its window.
+    private static string ProcessNameOf(IntPtr hWnd)
+    {
+        if (GetWindowThreadProcessId(hWnd, out uint pid) == 0 || pid == 0)
+        {
+            return "(gone)";
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById((int)pid);
+            return process.ProcessName;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return "(gone)";
+        }
     }
 
     // ----- Win32 -----
@@ -696,6 +722,10 @@ internal sealed partial class WorkspaceManager
     private const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;
     private const uint EVENT_OBJECT_DESTROY = 0x8001;
     private const uint EVENT_OBJECT_HIDE = 0x8003; // EVENT_OBJECT_SHOW (0x8002) is shared with launch placement
+    private const uint EVENT_OBJECT_CLOAKED = 0x8017; // EVENT_OBJECT_UNCLOAKED (0x8018) is shared with launch placement
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [DllImport("user32.dll")]
     private static extern bool IsZoomed(IntPtr hWnd);
