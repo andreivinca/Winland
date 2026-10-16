@@ -8,10 +8,11 @@ namespace Winland.Keys;
 
 /// <summary>
 /// Shared "hotkey register": a global low-level keyboard hook (WH_KEYBOARD_LL) running on its own
-/// dedicated thread. It is stateless: on each key-down it asks the OS whether the Win key is
-/// physically held right now, then asks a resolver whether the combo is claimed; if so it swallows the key,
+/// dedicated thread. On each key-down it asks the OS whether the Win key is physically held right
+/// now, then asks a resolver whether the combo is claimed; if so it swallows the key,
 /// injects a dummy 0xFF keystroke (so the Start menu doesn't pop when Win is used as a modifier), and
-/// dispatches the matched action id on the UI thread via a hidden message window.
+/// dispatches the matched action id on the UI thread via a hidden message window. Auto-repeat
+/// key-downs of a held combo are swallowed without dispatching again.
 ///
 /// Construct it on the UI thread (its message window must pump there).
 /// </summary>
@@ -68,6 +69,11 @@ internal sealed class KeyboardHook : IDisposable
     private bool ShiftPhys => _leftShift || _rightShift;
     private bool CtrlPhys => _leftCtrl || _rightCtrl;
     private bool AltPhys => _leftAlt || _rightAlt;
+
+    // Physical key (scancode + extended flag) of the combo that last fired, until it is released, so
+    // keyboard auto-repeat fires a bind once per press. Hook thread only; -1 = none.
+    private long _heldComboKey = NoComboKey;
+    private const long NoComboKey = -1;
 
     public KeyboardHook(Func<int, bool, bool, bool, int> resolve, Action<int> dispatch)
     {
@@ -165,6 +171,13 @@ internal sealed class KeyboardHook : IDisposable
             return CallNextHookEx(_hookHandle, nCode, wParam, lParam);
         }
 
+        bool extended = (data.flags & LLKHF_EXTENDED) != 0;
+        long physicalKey = data.scanCode | (extended ? 0x10000L : 0L);
+        if (isUp && physicalKey == _heldComboKey)
+        {
+            _heldComboKey = NoComboKey;
+        }
+
         if (isDown)
         {
             // No remembered state: ask the OS whether Win is physically held right now.
@@ -177,7 +190,6 @@ internal sealed class KeyboardHook : IDisposable
                 // numpad key as its navigation vk (VK_LEFT/RIGHT/...) instead of VK_NUMPADn, but the
                 // scancode is stable and non-extended (the real arrow cluster is extended). Normalizing
                 // to VK_NUMPADn lets Super+Shift+NumpadN resolve regardless of which vk Windows sent.
-                bool extended = (data.flags & LLKHF_EXTENDED) != 0;
                 int numpadVk = extended ? 0 : NumpadVkFromScanCode(data.scanCode);
                 bool numpad = numpadVk != 0;
                 int effectiveVk = numpad ? numpadVk : vk;
@@ -192,6 +204,13 @@ internal sealed class KeyboardHook : IDisposable
                 int actionId = _resolve(effectiveVk, shift, alt, ctrl);
                 if (actionId != 0)
                 {
+                    if (physicalKey == _heldComboKey)
+                    {
+                        return (IntPtr)1; // auto-repeat of a combo that already fired: swallow only
+                    }
+
+                    _heldComboKey = physicalKey;
+
                     // Break the "lone Win press" sequence so Start menu doesn't open on Win-up.
                     keybd_event(0xFF, 0, 0, (UIntPtr)InjectedMarker);
                     keybd_event(0xFF, 0, KEYEVENTF_KEYUP, (UIntPtr)InjectedMarker);

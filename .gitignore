@@ -2,6 +2,9 @@
 [Bb]in/
 [Oo]bj/
 
+# Test run output (dotnet test)
+TestResults/
+
 # Published / packaged output (local, not committed)
 dist/
 

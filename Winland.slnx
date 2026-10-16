@@ -1,8 +1,12 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/winland-env/winland-env.csproj" />
+    <Project Path="src/winland-indicator/winland-indicator.csproj" />
     <Project Path="src/winland-keys/winland-keys.csproj" />
     <Project Path="src/Winland.Common/Winland.Common.csproj" />
     <Project Path="src/winlandctl/winlandctl.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/winland-env.Tests/winland-env.Tests.csproj" />
   </Folder>
 </Solution>

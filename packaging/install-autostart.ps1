@@ -1,15 +1,16 @@
 <#
 .SYNOPSIS
-  Register (or remove) Winland's two daemons to start elevated at logon.
+  Register (or remove) Winland's processes to start at logon.
 
-  Winland is two long-running processes — winland-env (the window-manager service) and winland-keys
-  (the hotkey daemon) — both of which must run elevated. This registers one Scheduled Task per daemon,
-  triggered at logon, running with highest privileges (so there is no UAC prompt at sign-in).
+  Winland is two long-running elevated processes — winland-env (the window-manager service) and
+  winland-keys (the hotkey daemon) — plus winland-indicator (the on-screen workspace circles), which
+  runs at the user's normal level. This registers one Scheduled Task per process, triggered at logon;
+  the daemons run with highest privileges (so there is no UAC prompt at sign-in).
 
   Run this script itself elevated (from an admin PowerShell).
 
 .PARAMETER Dir
-  Folder containing winland-env.exe and winland-keys.exe. Defaults to this script's folder.
+  Folder containing the Winland exes. Defaults to this script's folder.
 
 .PARAMETER Uninstall
   Remove the scheduled tasks instead of creating them.
@@ -33,8 +34,12 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
 }
 
 $tasks = @(
-    @{ Name = 'Winland Env';  Exe = Join-Path $Dir 'winland-env.exe' },
-    @{ Name = 'Winland Keys'; Exe = Join-Path $Dir 'winland-keys.exe' }
+    @{ Name = 'Winland Env';  Exe = Join-Path $Dir 'winland-env.exe';  RunLevel = 'Highest' },
+    @{ Name = 'Winland Keys'; Exe = Join-Path $Dir 'winland-keys.exe'; RunLevel = 'Highest' },
+    # Limited, not Highest: the indicator only reads workspace state off a pipe and draws a circle,
+    # so it has no reason to hold administrator rights at all. Elevating a UI window that the user
+    # clicks and drags would be gratuitous.
+    @{ Name = 'Winland Indicator'; Exe = Join-Path $Dir 'winland-indicator.exe'; RunLevel = 'Limited' }
 )
 
 if ($Uninstall) {
@@ -53,7 +58,7 @@ foreach ($t in $tasks) {
 
     $action    = New-ScheduledTaskAction -Execute $t.Exe
     $trigger   = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel $t.RunLevel
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                     -ExecutionTimeLimit ([TimeSpan]::Zero)
 
@@ -62,4 +67,4 @@ foreach ($t in $tasks) {
     Write-Host "Registered task: $($t.Name) -> $($t.Exe)"
 }
 
-Write-Host "Done. winland-env and winland-keys will start elevated at next logon (or start them now)."
+Write-Host "Done. winland-env and winland-keys will start elevated at next logon, winland-indicator unelevated (or start them now)."

@@ -21,8 +21,13 @@ public static class Log
         try
         {
             RotateIfFull();
-            File.AppendAllText(LogPath,
-                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{ProcessName}] {message}{Environment.NewLine}");
+
+            // Every Winland process (and several threads) append to this one file: share it, or
+            // concurrent writers fail with a sharing violation and their lines are lost.
+            using var stream = new FileStream(LogPath, FileMode.Append, FileAccess.Write,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var writer = new StreamWriter(stream);
+            writer.Write($"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{ProcessName}] {message}{Environment.NewLine}");
         }
         catch { /* ignored */ }
     }

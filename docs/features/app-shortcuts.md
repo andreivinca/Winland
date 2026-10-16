@@ -14,7 +14,7 @@ Shortcut lines use:
 Example from shipped config:
 - `bind = SUPER RETURN, launch-or-focus wt.exe WindowsTerminal -- -d E:\WinLand`
 - `bind = SUPER SHIFT M, launch-or-focus spotify`
-- `bind = SUPER SHIFT A, launch-web https://gemini.google.com`
+- `bind = SUPER SHIFT A, launch-or-focus-web https://gemini.google.com`
 - `bind = SUPER D, show-desktop`
 
 ### 2.2 Parser Responsibilities
@@ -83,7 +83,7 @@ launched with the user's normal token, borrowed from the desktop shell by `Unele
 launch falls back to a plain — elevated — start.
 
 ### 4.6 Failure Policy
-All launch errors are swallowed to preserve daemon stability.
+Launch errors are logged and otherwise ignored, to preserve daemon stability.
 
 ## 5. Bundled Script Verbs
 
@@ -110,11 +110,25 @@ Behavior summary:
 
 ## 5.2 `launch-web.ps1`
 Goal:
-- Open URL as app-style browser window via Chrome/Chromium `--app=` mode.
+- Open URL as app-style browser window via Chrome/Chromium `--app=` mode (always a new window).
 
 Behavior summary:
+- Asks for `place-next-window`, so the window opens on the monitor under the mouse, as a tile of the
+  workspace shown there (see `tiling.md` §4.1).
 - Resolves browser executable via App Paths registry keys, then known install locations, then `chrome` fallback.
 - Launches browser with `--app=<url>`.
+
+## 5.2a `launch-or-focus-web.ps1`
+Goal:
+- `launch-or-focus` for web apps: focus the app window already open for a URL, or open one with
+  `launch-web.ps1` — the same rules as §5.1 (already focused → open another instance).
+
+Behavior summary:
+- Runs `winlandctl focus-web <url>`. Chromium-based browsers give each `--app` window its own
+  AppUserModelID, `<browser>.<host>_<path>` (e.g. `Chromium.gemini.google.com_/`), while ordinary
+  browser windows carry the browser's id — so only that URL's app window matches.
+- Exit code 0 means it was focused — done. Otherwise (none open, already foreground, `winland-env`
+  not running) it runs `launch-web.ps1 <url>`.
 
 ## 5.3 `show-desktop.ps1`
 Goal:

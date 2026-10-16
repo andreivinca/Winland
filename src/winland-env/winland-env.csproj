@@ -7,9 +7,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Per-monitor-v2 DPI awareness: window and monitor coordinates are then real physical pixels on
+         every monitor, which tiling needs to place windows exactly on mixed-DPI setups. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>winland-env</AssemblyName>
     <Version>0.4.0</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="winland-env.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Winland.Common\Winland.Common.csproj" />

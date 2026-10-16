@@ -29,10 +29,14 @@ if ([string]::IsNullOrWhiteSpace($Match)) {
 
 # winlandctl sits next to this script (packaged layout). Exit code 0 means a window was focused; any
 # failure (no window, already foreground, winland-env not running) means "launch instead".
-& (Join-Path $PSScriptRoot 'winlandctl.exe') focus-app $Match 2>$null | Out-Null
+$ctl = Join-Path $PSScriptRoot 'winlandctl.exe'
+& $ctl focus-app $Match 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     return
 }
+
+# Ask winland-env to open the new window on the monitor under the mouse.
+& $ctl place-next-window 2>$null | Out-Null
 
 if ($null -eq $LaunchArgs -or $LaunchArgs.Count -eq 0) {
     Start-Process $App

@@ -4,10 +4,14 @@ using Winland.Common;
 namespace Winland.Env;
 
 /// <summary>
-/// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "scratchpad",
-/// "workspace-release", "focus left", "focus-app firefox", "close") to the matching
+/// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "unlink", "scratchpad",
+/// "workspace-release", "focus left", "move-window right", "focus-app firefox",
+/// "focus-web https://gemini.google.com", "close", "place-next-window") to the matching
 /// in-process operation. The single source of truth for what the environment can do; reached from the
 /// IPC server today (and any other front door later). <see cref="Execute"/> runs on the UI thread.
+///
+/// Commands that deliberately focus or move a window run through <see cref="FollowedByCursor{T}"/>, so
+/// the mouse ends up on the window the keyboard is now on.
 /// </summary>
 internal sealed class Dispatcher
 {
@@ -36,13 +40,17 @@ internal sealed class Dispatcher
             case "movetoworkspace":
                 if (TryParseWorkspace(args, out int target))
                 {
-                    _workspaces.MoveFocusedWindowToWorkspace(target);
+                    FollowedByCursor(() => _workspaces.MoveFocusedWindowToWorkspace(target));
                     return Ipc.Ok;
                 }
                 return $"{Ipc.ErrPrefix} movetoworkspace expects a whole number >= 1";
 
             case "link-here":
-                _workspaces.LinkFocusedWindowToCurrentWorkspace();
+                FollowedByCursor(_workspaces.LinkFocusedWindowToCurrentWorkspace);
+                return Ipc.Ok;
+
+            case "unlink":
+                _workspaces.UnlinkFocusedWindow();
                 return Ipc.Ok;
 
             case "scratchpad":
@@ -56,17 +64,42 @@ internal sealed class Dispatcher
             case "focus":
                 if (TryParseDirection(args, out Direction dir))
                 {
-                    WindowNavigator.FocusNearest(dir);
+                    // Left/right step through a tile strip, scrolling it. Up/down, a window that isn't a
+                    // tile, or a step past either end of the strip focus the nearest window on screen.
+                    FollowedByCursor(() =>
+                    {
+                        if (!_workspaces.FocusAdjacentTile(dir))
+                        {
+                            WindowNavigator.FocusNearest(dir);
+                        }
+                    });
                     return Ipc.Ok;
                 }
                 return $"{Ipc.ErrPrefix} focus expects left|right|up|down";
+
+            case "move-window":
+                if (TryParseDirection(args, out Direction moveDir) && moveDir is Direction.Left or Direction.Right)
+                {
+                    FollowedByCursor(() => _workspaces.MoveFocusedWindow(moveDir));
+                    return Ipc.Ok;
+                }
+                return $"{Ipc.ErrPrefix} move-window expects left|right";
 
             case "focus-app":
                 if (args.Length == 0)
                 {
                     return $"{Ipc.ErrPrefix} focus-app expects a process name";
                 }
-                return WindowNavigator.FocusApp(args)
+                return FollowedByCursor(() => WindowNavigator.FocusApp(args))
+                    ? Ipc.Ok
+                    : $"{Ipc.ErrPrefix} nothing to focus";
+
+            case "focus-web":
+                if (!Uri.TryCreate(args, UriKind.Absolute, out Uri? url) || url.Host.Length == 0)
+                {
+                    return $"{Ipc.ErrPrefix} focus-web expects an absolute URL";
+                }
+                return FollowedByCursor(() => WindowNavigator.FocusWebApp(url))
                     ? Ipc.Ok
                     : $"{Ipc.ErrPrefix} nothing to focus";
 
@@ -74,10 +107,33 @@ internal sealed class Dispatcher
                 WindowNavigator.CloseForeground();
                 return Ipc.Ok;
 
+            case "place-next-window":
+                _workspaces.PlaceNextWindowOnActiveMonitor();
+                return Ipc.Ok;
+
             default:
                 return $"{Ipc.ErrPrefix} unknown verb '{verb}'";
         }
     }
+
+    /// <summary>
+    /// Run a command that focuses or moves a window, then bring the mouse to the focused window if focus
+    /// or its position changed (see <see cref="CursorWarp"/>).
+    /// </summary>
+    private static T FollowedByCursor<T>(Func<T> command)
+    {
+        CursorWarp.FocusState before = CursorWarp.Capture();
+        T result = command();
+        CursorWarp.Follow(before);
+        return result;
+    }
+
+    private static void FollowedByCursor(Action command) =>
+        FollowedByCursor(() =>
+        {
+            command();
+            return true;
+        });
 
     // A user-facing workspace number: any whole number >= 1 except the value reserved for the
     // scratchpad, which is only ever entered through its own toggle.

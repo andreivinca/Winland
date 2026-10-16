@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Winland.Common;
 
 namespace Winland.Keys;
 
@@ -9,7 +10,7 @@ namespace Winland.Keys;
 internal sealed record ConfigEntry(string Keyword, string Value);
 
 /// <summary>
-/// Global config reader for Winland's Hyprland/Omarchy-style winland.conf. It reads the file, drops
+/// Global config reader for Winland's Hyprland/Omarchy-style config.conf. It reads the file, drops
 /// blank and '#'-comment lines, and splits every remaining line on the first '=' into a
 /// (keyword, value) entry. It deliberately does NOT interpret the values — feature modules consume the
 /// entries they care about (e.g. <see cref="HotkeyConfig"/> reads "bind" entries). To add a new config
@@ -34,8 +35,9 @@ internal sealed class Config
         {
             lines = File.ReadAllLines(path);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Line($"config not loaded ({path}): {ex.Message}");
             return new Config(entries);
         }
 

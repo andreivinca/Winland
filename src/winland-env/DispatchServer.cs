@@ -1,8 +1,6 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Threading;
 using Winland.Common;
 
@@ -32,21 +30,12 @@ internal sealed class DispatchServer : IDisposable
     }
 
     /// <summary>
-    /// Create the pipe with an explicit ACL granting the logged-on user's processes access — elevated
-    /// or not. The default DACL of a pipe created by this elevated server rejects the user's own
-    /// unelevated processes, which would force every winlandctl caller (helper scripts, terminals) to
-    /// run elevated. The trade: any same-user process may drive the window-management verbs; the
-    /// verbs are deliberately limited to that.
+    /// Create the pipe with the shared ACL (see <see cref="PipeAcl"/>), so unelevated callers of
+    /// winlandctl reach this elevated server. One instance at a time: commands are serialised anyway.
     /// </summary>
-    private static NamedPipeServerStream CreateServer()
-    {
-        var security = new PipeSecurity();
-        security.AddAccessRule(new PipeAccessRule(
-            WindowsIdentity.GetCurrent().User!, PipeAccessRights.FullControl, AccessControlType.Allow));
-
-        return NamedPipeServerStreamAcl.Create(Ipc.PipeName, PipeDirection.InOut, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, security);
-    }
+    private static NamedPipeServerStream CreateServer() =>
+        NamedPipeServerStreamAcl.Create(Ipc.PipeName, PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0, PipeAcl.ForCurrentUser());
 
     private void Loop()
     {
@@ -90,7 +79,11 @@ internal sealed class DispatchServer : IDisposable
 
         _disposed = true;
         _cts.Cancel();
-        _thread.Join(1000);
-        _cts.Dispose();
+
+        // A thread still running after the timeout may yet touch the token; leave the source alive then.
+        if (_thread.Join(1000))
+        {
+            _cts.Dispose();
+        }
     }
 }

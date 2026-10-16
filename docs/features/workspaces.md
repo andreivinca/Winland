@@ -3,7 +3,8 @@
 ## 1. Objective
 
 Provide deterministic, per-monitor workspace management where each monitor displays one workspace at
-a time and workspace windows are restored/minimized as users switch contexts.
+a time: switching puts away everything on the monitor and lays out the incoming workspace's tiles.
+(How tiles are arranged: `tiling.md`.)
 
 Workspaces live in the **`winland-env`** service. They are driven over the control pipe: the
 `winland-keys` daemon runs the bind `winlandctl workspace N`, `winlandctl` forwards `workspace N` to
@@ -13,32 +14,41 @@ workspace logic. (See `architecture-overview.md`.)
 ## 2. Membership Model (the core rule)
 
 `_windowWorkspace` (window handle → workspace number) is the single source of truth, and it changes
-**only on explicit user action**:
+**only on explicit user action**. A member is a tile of its workspace, or floating (dragged out of the
+strip by the user but still in the workspace; see `tiling.md`).
 
-- **Move** (`Win+Shift+N` → `movetoworkspace N`) — unlink from the old workspace, link to N.
-- **Link** (`Win+Space` → `link-here`) — link to the workspace currently shown on the window's
-  monitor (a no-op when that monitor shows no workspace).
+- **Move** (`Win+Shift+N` → `movetoworkspace N`) — unlink from the old workspace, link to N as a tile.
+- **Tile** (`Win+Space` → `link-here`) — link to the workspace currently shown on the window's
+  monitor, as a tile (a no-op when that monitor shows no workspace).
+- **Open from a Winland shortcut** (`place-next-window`) — link to the workspace shown on the monitor
+  under the mouse, as a tile (resizable windows only).
+- **Unlink** (`Win+Shift+Space` → `unlink`) — remove from its workspace; a normal window again.
+- **A tile moved past the end of its strip** (`move-window`) — relink to the workspace shown on the
+  monitor it crosses to.
 - **Close** — closed windows are pruned *lazily* in `WindowsOf` (when membership is next read).
 
 Nothing else mutates membership. In particular:
 - **No windows are assigned at startup** — apps that are open when Winland starts stay unlinked until
   claimed.
-- **Interaction never re-links** — activating, restoring, maximizing, or dragging a window does not
-  pull it into a workspace.
-- **No destroy-event hook** — `EVENT_OBJECT_DESTROY` is delivered asynchronously and can arrive with
-  a recycled HWND that now belongs to a different, still-open window; acting on it would silently
-  unlink that window. Hence the lazy pruning above.
+- **Interaction never re-links** — activating, restoring, maximizing, or dragging a window never pulls it
+  into a workspace. Dragging a tile, even onto another monitor, only makes it float in its own
+  workspace.
+- **Window events never unlink** — `EVENT_OBJECT_DESTROY` is delivered asynchronously and can arrive
+  with a recycled HWND that now belongs to a different, still-open window; acting on that handle would
+  silently unlink it. Tiling hooks destroy/show/hide only to re-lay out a strip, which re-checks every
+  member; membership itself is still pruned lazily.
 
-The only WinEvent hook is `EVENT_SYSTEM_FOREGROUND`, used solely to remember each workspace's
-last-focused window (for focus restore on switch).
+The foreground hook remembers each workspace's last-focused tile (for focus restore on switch, and to
+keep it in view); the tiling hooks are described in `tiling.md` §4.
 
 ## 3. State Model
 
 ### 3.1 Core State Containers
 - `_windowWorkspace`: window handle → workspace number (see §2).
-- `_lastActive`: workspace → last active window (focus restore).
-- `_zorder`: workspace → its windows top-to-bottom, captured when the workspace is put away, so the
-  same stacking order (and frontmost window) comes back on return.
+- `_lastActive`: workspace → last active window (focus restore, and the tile kept in view).
+- `_tileOrder`, `_floating`, `_scrollFirst`, `_arranged`: each workspace's strip order, floating
+  members, scroll position, and last
+  layout (see `tiling.md`).
 - `_workspaceHome`: workspace → home monitor, stored as the stable GDI **device name**
   (`\\.\DISPLAYn`), *not* an HMONITOR — handles are reissued on sleep/wake/display changes.
 - `_shownByDevice`: device name → the workspace shown on that monitor; survives a monitor dropping
@@ -76,19 +86,25 @@ shell desktop window (`Progman`/`WorkerW`).
 2. `ResolveHome(k)`: use k's home monitor if present. If the home monitor is asleep/disconnected,
    show k on the mouse monitor *without* re-homing it. First-ever use pins k's home to the mouse
    monitor.
-3. If k is **already shown** on its home monitor (a re-press), *re-assert*: restore minimized
-   members and pull back windows dragged onto other monitors; windows already visible on the monitor
-   keep their current place and stacking.
-4. On a **real switch**: capture the outgoing workspace's z-order, minimize everything on the monitor
-   that isn't k's (membership untouched), restore k's windows onto the monitor, re-apply k's captured
-   z-order, record k as shown, and focus k's last-active window.
-5. A ~1.5 s event guard brackets the operation so our own minimize/restore events don't feed back
+3. On a **real switch**, remember the outgoing workspace's frontmost tile as its focus target
+   (`RememberFrontmost`).
+4. Minimize everything on the monitor that isn't k's — other workspaces' windows and unlinked windows
+   alike (`MinimizeMonitorWindows`; membership untouched), so an empty workspace means an empty
+   monitor. On a real switch, also put away the outgoing workspace's windows floating on other
+   monitors (`PutAwayWorkspace`).
+5. Record k as shown and bring k's windows back (`ShowWorkspace`): its strip laid out on the home
+   monitor scrolled to its focused tile, its floating windows restored where the user left them — on
+   any monitor. Then focus k's last-active window. On a re-press of an already-shown workspace this
+   *re-asserts* the workspace: minimized or maximized tiles snap back into their columns, and minimized
+   floating windows come back in place.
+6. A ~1.5 s event guard brackets the operation so our own minimize/restore events don't feed back
    into `_lastActive` (see §9).
 
 ## 7. Release Semantics (`Win+Shift+W` → `workspace-release`)
 
-Acts on the monitor under the cursor: minimize every window there, remove the workspace's home
-pinning, set the monitor's `Current` to 0 (tray shows a dash). Members stay linked, so `Win+N` on any
+Acts on the monitor under the cursor: remember the workspace's frontmost tile, minimize every window
+there and the workspace's windows floating elsewhere, remove the workspace's home pinning, set the
+monitor's `Current` to 0 (the indicator shows a dash). Members stay linked, so `Win+N` on any
 monitor later re-homes the workspace there and brings them back. Releasing while the **scratchpad**
 is shown puts the scratchpad's windows away and clears its return workspace instead (the scratchpad
 never has a home to unpin).
@@ -101,7 +117,7 @@ A roaming workspace reserved at `int.MaxValue` with **no home monitor**:
 - Toggling while it is up on *another* monitor first sends that monitor back to its previous
   workspace, then brings the scratchpad (and its windows) to the mouse monitor.
 - Windows attach to it like any workspace: focus one while the scratchpad is shown and press
-  `Win+Space`.
+  `Win+Space`. Its tiles are laid out on whichever monitor it appears on.
 
 ## 9. Focus Restoration and Event Guarding
 
@@ -111,13 +127,16 @@ suppression (never `AttachThreadInput`).
 
 Workspace operations generate window events asynchronously; a guard period (~1500 ms) around each
 operation makes the foreground hook ignore them. Because a click made *during* the guard can be
-missed, `CaptureZOrder` trusts the live frontmost window over `_lastActive` when a workspace is put
+missed, `RememberFrontmost` trusts the live frontmost tile over `_lastActive` when a workspace is put
 away.
 
-## 10. Primary Monitor Integration
+## 10. Change Notification
 
-`PrimaryWorkspaceChanged` emits the workspace shown on the **primary** monitor; the tray icon
-subscribes. The scratchpad shows as "S", a released (empty) monitor as a dash.
+`NotifyWorkspaceChanges` runs after every operation that can change what a monitor shows, and raises
+`WorkspacesChanged` — `WorkspaceSnapshot`: every live monitor's device name and shown workspace,
+ordered left-to-right. `EventServer` subscribes and broadcasts it to the on-screen indicator (see
+`workspace-indicator.md`), which renders the scratchpad as "S" and a released (empty) monitor as a
+dash.
 
 ## 11. Known Constraints
 
@@ -133,6 +152,9 @@ When changing workspace logic:
 1. Preserve monitor isolation semantics.
 2. Preserve `_windowWorkspace` as the single membership authority — and keep membership mutations
    explicit-only (§2).
-3. Key any new per-monitor state on device names, not HMONITORs.
-4. Reassess guard timing if introducing async/longer operations.
-5. Update tray integration if primary workspace signal semantics change.
+3. Never tile, move or resize a window that isn't a workspace member; only put it away with its
+   monitor's workspace.
+4. Key any new per-monitor state on device names, not HMONITORs.
+5. Reassess guard timing if introducing async/longer operations.
+6. Keep every change on the one `NotifyWorkspaceChanges` path, so the on-screen indicator can never
+   disagree about what a monitor is showing.

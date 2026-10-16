@@ -66,27 +66,54 @@ internal static class WindowNavigator
             return false;
         }
 
-        // Already in the foreground: report "nothing to focus" so the caller opens a fresh instance.
-        IntPtr foreground = GetForegroundWindow();
-        if (foreground != IntPtr.Zero
-            && GetWindowThreadProcessId(foreground, out uint foregroundPid) != 0
-            && pids.Contains(foregroundPid))
+        return FocusFirstMatching(h => GetWindowThreadProcessId(h, out uint pid) != 0 && pids.Contains(pid),
+            $"focus-app {name}");
+    }
+
+    /// <summary>
+    /// Focus the app window a Chromium-based browser opened for <paramref name="url"/> with --app
+    /// ("focus-web", used by launch-web binds), with the same rules as <see cref="FocusApp"/>. Such
+    /// windows carry an AppUserModelID of "&lt;browser&gt;.&lt;host&gt;_&lt;path&gt;[.&lt;profile&gt;]"
+    /// (e.g. "Chromium.gemini.google.com_/"), while ordinary browser windows carry the browser's own.
+    /// </summary>
+    public static bool FocusWebApp(Uri url)
+    {
+        string marker = "." + url.Host + "_" + url.AbsolutePath;
+        return FocusFirstMatching(h => IsWebAppId(GetAppUserModelId(h), marker), $"focus-web {url.Host}");
+    }
+
+    private static bool IsWebAppId(string? appId, string marker)
+    {
+        if (appId == null)
         {
             return false;
         }
 
-        // EnumWindows yields top-to-bottom, so the first non-minimized hit is the app's frontmost
-        // window; the first minimized one is kept only as a fallback.
+        // The marker must end the id or be followed by the profile part, so "/" does not match "/app".
+        int at = appId.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        int end = at + marker.Length;
+        return at >= 0 && (end == appId.Length || appId[end] == '.');
+    }
+
+    /// <summary>
+    /// Focus the frontmost window that <paramref name="isMatch"/> accepts: the topmost non-minimized
+    /// one, or a minimized one (restored) when there is nothing else. Returns false when nothing
+    /// matches or a match is already in the foreground — in both cases the caller launches instead.
+    /// </summary>
+    private static bool FocusFirstMatching(Func<IntPtr, bool> isMatch, string logLine)
+    {
+        IntPtr foreground = GetForegroundWindow();
+        if (foreground != IntPtr.Zero && isMatch(foreground))
+        {
+            return false;
+        }
+
+        // EnumWindows yields top-to-bottom, so the first non-minimized hit is the frontmost match; the
+        // first minimized one is kept only as a fallback.
         IntPtr best = IntPtr.Zero;
         EnumWindows((h, _) =>
         {
-            if (!IsAppWindow(h))
-            {
-                return true;
-            }
-
-            GetWindowThreadProcessId(h, out uint pid);
-            if (!pids.Contains(pid))
+            if (!IsAppWindow(h) || !isMatch(h))
             {
                 return true;
             }
@@ -110,9 +137,41 @@ internal static class WindowNavigator
             return false;
         }
 
-        Log.Line($"focus-app {name}");
+        Log.Line(logLine);
         ForceForeground(best);
         return true;
+    }
+
+    /// <summary>A window's own AppUserModelID (System.AppUserModel.ID), or null when it sets none.</summary>
+    private static string? GetAppUserModelId(IntPtr hWnd)
+    {
+        Guid iid = typeof(IPropertyStore).GUID;
+        if (SHGetPropertyStoreForWindow(hWnd, ref iid, out IPropertyStore? store) != 0 || store == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            PROPERTYKEY key = PKEY_AppUserModel_ID;
+            if (store.GetValue(ref key, out PROPVARIANT value) != 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                return value.vt == VT_LPWSTR ? Marshal.PtrToStringUni(value.pointer) : null;
+            }
+            finally
+            {
+                PropVariantClear(ref value);
+            }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(store);
+        }
     }
 
     public static void FocusNearest(Direction direction)
@@ -162,7 +221,7 @@ internal static class WindowNavigator
         if (bestHandle != IntPtr.Zero)
         {
             LogFocusedProcess(bestHandle);
-            SetForegroundWindow(bestHandle);
+            ForceForeground(bestHandle);
         }
     }
 
@@ -274,7 +333,8 @@ internal static class WindowNavigator
         IntPtr current = GetWindow(hWnd, GW_HWNDPREV);
         while (current != IntPtr.Zero)
         {
-            if (IsWindowVisible(current) && !IsIconic(current) && GetWindowRect(current, out RECT rect))
+            if (IsWindowVisible(current) && !IsIconic(current) && !IsWindowCloaked(current)
+                && GetWindowRect(current, out RECT rect))
             {
                 if (RectContains(rect, targetRect))
                 {
@@ -433,6 +493,43 @@ internal static class WindowNavigator
     }
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    private const ushort VT_LPWSTR = 31;
+
+    private static readonly PROPERTYKEY PKEY_AppUserModel_ID =
+        new() { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private struct PROPERTYKEY
+    {
+        public Guid fmtid;
+        public uint pid;
+    }
+
+    // Only the members read here; Size covers the full 64-bit PROPVARIANT the callee writes.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    private struct PROPVARIANT
+    {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public IntPtr pointer;
+    }
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PROPERTYKEY key);
+        [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT value);
+        [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT value);
+        [PreserveSig] int Commit();
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid riid,
+        [MarshalAs(UnmanagedType.Interface)] out IPropertyStore? propertyStore);
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PROPVARIANT pvar);
 
     [DllImport("user32.dll")]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);

@@ -16,14 +16,17 @@ This folder contains the baseline project documentation for future contributors 
 
 ### 4) Feature Deep Dives
 - [Workspaces](features/workspaces.md)
+- [Tiling](features/tiling.md)
 - [Window Focus](features/window-focus.md)
 - [App Shortcuts](features/app-shortcuts.md)
+- [Workspace Indicator](features/workspace-indicator.md)
 
 ## Scope
 
-These documents describe the current implementation: **three cooperating processes** under `src/`
-(`winland-keys`, `winland-env`, `winlandctl`) plus the shared `Winland.Common` library. The two
-daemons target `net10.0-windows` (WinForms + Win32 interop); `winlandctl` targets `net10.0`.
+These documents describe the current implementation: **four cooperating processes** under `src/`
+(`winland-keys`, `winland-env`, `winlandctl`, `winland-indicator`) plus the shared `Winland.Common`
+library. The two daemons and the indicator target `net10.0-windows` (WinForms + Win32 interop);
+`winlandctl` targets `net10.0`.
 
 ## Source of Truth
 
@@ -34,8 +37,10 @@ Primary implementation references:
 - `src/winland-keys/KeyboardHook.cs` — the global Win-key hook
 - `src/winland-keys/AppLauncher.cs`, `UnelevatedLauncher.cs`, `HotkeyConfig.cs`, `Config.cs` — binds + command execution
 - `src/winland-keys/config.conf` — shipped shortcut bindings
-- `src/Winland.Common/Ipc.cs` — control-pipe protocol (shared)
+- `src/Winland.Common/Ipc.cs` — control- and event-pipe protocols (shared)
 - `src/winlandctl/Program.cs` — the control CLI
 - `src/winland-env/EnvApp.cs`, `DispatchServer.cs`, `UiInvoker.cs`, `Dispatcher.cs` — pipe-driven service
+- `src/winland-env/EventServer.cs`, `PipeAcl.cs` — workspace-state broadcast
 - `src/winland-env/WorkspaceManager.cs` — per-monitor workspaces
 - `src/winland-env/WindowNavigator.cs` — directional focus + close
+- `src/winland-indicator/IndicatorApp.cs`, `IndicatorWindow.cs`, `EventClient.cs` — on-screen circles

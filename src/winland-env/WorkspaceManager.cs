@@ -12,14 +12,17 @@ namespace Winland.Env;
 /// opened on) and never moves between monitors. A monitor shows exactly one workspace at a time;
 /// the windows of a workspace that is not currently shown are minimized (put away).
 ///
-/// Win+N: show workspace N on its home monitor — minimize everything there that isn't N's, restore N's
-/// windows, and reclaim any of N's windows the user dragged onto another monitor. This runs on every
-/// press, so re-pressing Win+N re-asserts the layout: minimized members come back up and strays are
-/// pulled home, while windows already visible on the monitor stay exactly where they are. Other
-/// monitors keep their own shown workspace; a reclaimed window simply leaves the monitor it was
-/// dragged to.
+/// A workspace's windows are its tiles, laid out in a scrolling strip (see WorkspaceManager.Tiling.cs).
+/// Windows that belong to no workspace are ordinary windows: Winland never tiles, moves or resizes them.
+/// Like every window on a monitor, though, they are put away (minimized) when that monitor switches
+/// workspace, so the monitor shows only the workspace switched to.
+///
+/// Win+N: show workspace N on its home monitor — put away everything there that isn't N's and lay out
+/// N's strip. This runs on every press, so re-pressing Win+N re-asserts the layout: minimized tiles come
+/// back up, tiles dragged elsewhere are pulled home, and every tile snaps back into its column. Other
+/// monitors keep their own shown workspace.
 /// </summary>
-internal sealed class WorkspaceManager : IDisposable
+internal sealed partial class WorkspaceManager : IDisposable
 {
     private sealed class MonitorState
     {
@@ -32,11 +35,8 @@ internal sealed class WorkspaceManager : IDisposable
 
     // window handle -> workspace number (any integer >= 1). The single source of truth for membership.
     private readonly Dictionary<IntPtr, int> _windowWorkspace = new();
-    // workspace -> most recently focused window (used to restore focus after a switch).
+    // workspace -> most recently focused window (restores focus after a switch, and keeps it in view).
     private readonly Dictionary<int, IntPtr> _lastActive = new();
-    // workspace -> its windows top-to-bottom, captured when the workspace is put away so the same stacking
-    // order (and frontmost window) is reproduced when it is shown again.
-    private readonly Dictionary<int, List<IntPtr>> _zorder = new();
     // workspace -> the monitor it is linked to, by stable device name (NOT HMONITOR, which is reissued on
     // sleep/wake/display-config changes). Set the first time the workspace is entered and kept until released.
     private readonly Dictionary<int, string> _workspaceHome = new();
@@ -59,23 +59,33 @@ internal sealed class WorkspaceManager : IDisposable
     private readonly List<IntPtr> _winEventHooks = new();
 
     /// <summary>
-    /// Raised (on the UI thread) with the workspace currently shown on the primary monitor, whenever a
-    /// Win+N / release operation may have changed it. The tray icon lives on the primary monitor's
-    /// taskbar, so it must reflect that monitor's workspace — not whatever workspace a press happened to
-    /// switch on some other monitor.
+    /// Raised (on the UI thread) with what EVERY live monitor is showing, whenever an operation may
+    /// have changed it. It feeds the broadcast event pipe, whose subscribers (the on-screen
+    /// indicator) draw one badge per monitor and therefore need all of them.
     /// </summary>
-    public event Action<int>? PrimaryWorkspaceChanged;
+    public event Action<IReadOnlyList<(string Device, int Workspace)>>? WorkspacesChanged;
 
-    /// <summary>The workspace currently shown on the primary monitor (for the tray icon).</summary>
-    public int PrimaryWorkspace =>
-        (_monitors.Values.FirstOrDefault(m => m.Primary) ?? _monitors.Values.FirstOrDefault())?.Current ?? 1;
+    /// <summary>
+    /// What each live monitor is showing, keyed by stable device name and ordered left-to-right. Raw
+    /// values: 0 = nothing shown, <see cref="ScratchpadWorkspace"/> = the scratchpad. A monitor that is
+    /// asleep (out of enumeration) is absent — it has nothing on screen to label.
+    /// </summary>
+    public IReadOnlyList<(string Device, int Workspace)> WorkspaceSnapshot =>
+        _monitors.Values
+            .OrderBy(m => m.Work.Left)
+            .ThenBy(m => m.Work.Top)
+            .Select(m => (Device: m.Device, Workspace: m.Current))
+            .ToList();
 
-    private void NotifyPrimaryWorkspace() => PrimaryWorkspaceChanged?.Invoke(PrimaryWorkspace);
+    // Every operation that can change what a monitor shows ends here.
+    private void NotifyWorkspaceChanges() => WorkspacesChanged?.Invoke(WorkspaceSnapshot);
 
     // Window events (foreground/minimize/move) are delivered asynchronously, so events triggered by
     // our OWN minimize/restore during a switch arrive AFTER the switch returns. While the current time
     // is below this tick, ignore re-homing events so our own operations don't corrupt assignments.
-    private int _eventGuardUntilTick;
+    // 64-bit ticks: the 32-bit TickCount wraps negative after ~25 days of uptime.
+    private const long EventGuardMs = 1500;
+    private long _eventGuardUntilTick;
 
     public WorkspaceManager()
     {
@@ -86,6 +96,9 @@ internal sealed class WorkspaceManager : IDisposable
 
     public void Dispose()
     {
+        DisarmLaunchPlacement();
+        _reflowTimer.Dispose();
+
         foreach (IntPtr hook in _winEventHooks)
         {
             if (hook != IntPtr.Zero)
@@ -185,10 +198,9 @@ internal sealed class WorkspaceManager : IDisposable
 
     /// <summary>
     /// Handle a switch to workspace <paramref name="k"/> (any integer >= 1). Each workspace is linked
-    /// to a home monitor — set the
-    /// first time it's entered, to the monitor under the mouse cursor. Win+k always acts on k's home
-    /// monitor: if k is already shown there, focus it; otherwise put away that monitor's apps and show
-    /// k (empty the first time). Other monitors are untouched.
+    /// to a home monitor — set the first time it's entered, to the monitor under the mouse cursor. Win+k
+    /// always acts on k's home monitor: put away everything there that isn't k's — unlinked windows
+    /// included — and lay out k's strip (an empty monitor the first time). Other monitors are untouched.
     /// </summary>
     public void SwitchFocusedMonitorTo(int k)
     {
@@ -209,43 +221,40 @@ internal sealed class WorkspaceManager : IDisposable
             return;
         }
 
-        // Reconcile k's home monitor on every press (even when it already shows k), so a window the user
-        // dragged off the monitor is pulled back and the monitor again shows only k's windows.
+        // Reconcile k's home monitor on every press (even when it already shows k), so a tile the user
+        // dragged away or minimized comes back and every tile is in its column again.
         bool already = home.Current == k;
         int outgoing = home.Current;
 
         GuardEvents();
 
-        // Before putting the outgoing workspace away, remember its window stacking order so it comes back
-        // the same way next time. (Skip on a re-press of the same workspace — nothing is changing.)
+        // Before putting the outgoing workspace away, remember its focused tile so focus returns there.
+        // (Skip on a re-press of the same workspace — nothing is changing.)
         if (!already && outgoing >= 1)
         {
-            CaptureZOrder(outgoing, home);
+            RememberFrontmost(outgoing, home);
         }
 
-        // Put away everything on k's home monitor that doesn't belong to k. Membership is left alone —
-        // each window keeps whatever workspace it was linked to (or stays unlinked). Switching never
-        // links or unlinks a window; only move (Win+Shift+N), link (Win+Space), or closing does.
+        // Put away everything on k's home monitor that isn't k's — unlinked windows too, so the monitor
+        // shows only k — and the outgoing workspace's windows that float on other monitors. Membership is
+        // left alone — switching never links or unlinks a window; only move (Win+Shift+N), tile (Win+Space),
+        // unlink (Win+Shift+Space), or closing does.
         MinimizeMonitorWindows(home, keep: k);
-
-        // Show k's windows on its home monitor. On a real switch, restore all of them (k was put away).
-        // When k is already shown, re-assert instead: restore minimized members and reclaim windows
-        // dragged onto another monitor, but leave the visible ones exactly where they are.
-        ShowWorkspaceOnMonitor(k, home, preserveVisible: already);
-
-        // Re-stack k's windows in the order they had when last left (real switch only — on a reclaim we
-        // leave the user's current arrangement alone).
-        if (!already)
+        if (!already && outgoing >= 1)
         {
-            ApplyZOrder(k);
+            PutAwayWorkspace(outgoing);
         }
 
         SetShown(home, k); // remember across sleep; ensure no other monitor still claims k
+
+        // Lay out k's strip on its home monitor, scrolled to its focused tile, and bring back its floating
+        // windows where they were left.
+        ShowWorkspace(k, home);
         FocusWorkspace(k);
         GuardEvents();
 
         LogWorkspaces(already ? $"reclaim WS{k}" : $"switch WS{k}");
-        NotifyPrimaryWorkspace();
+        NotifyWorkspaceChanges();
     }
 
     /// <summary>k's linked home monitor; on first entry it's pinned to the monitor under the cursor.</summary>
@@ -308,9 +317,9 @@ internal sealed class WorkspaceManager : IDisposable
     /// <summary>
     /// Release the workspace currently shown on the active (cursor) monitor: put away every window on
     /// that monitor (minimized) and unpin the workspace's home, so it can be re-summoned on any monitor —
-    /// `Win+N` on another monitor re-homes it there and restores its (still-linked) windows. Membership
-    /// is untouched: the workspace's members stay linked and come back with it; unlinked windows on the
-    /// monitor are just minimized and stay where they are. The active monitor is left showing no workspace.
+    /// `Win+N` on another monitor re-homes it there and lays its (still-linked) tiles out again.
+    /// Membership is untouched: unlinked windows are just minimized and stay unlinked. The active monitor
+    /// is left showing no workspace.
     /// </summary>
     public void ReleaseCurrentWorkspace()
     {
@@ -324,7 +333,9 @@ internal sealed class WorkspaceManager : IDisposable
         int w = m.Current;
 
         GuardEvents();
+        RememberFrontmost(w, m);                // so focus returns to the same tile
         MinimizeMonitorWindows(m, keep: -1);    // put away every window on this monitor
+        PutAwayWorkspace(w);                    // and the workspace's windows floating on other monitors
         if (w == ScratchpadWorkspace)
         {
             _scratchpadReturn = 0;              // released, not toggled off — nothing to return to
@@ -338,14 +349,14 @@ internal sealed class WorkspaceManager : IDisposable
         GuardEvents();
 
         LogWorkspaces($"release {WsLabel(w)}");
-        NotifyPrimaryWorkspace();
+        NotifyWorkspaceChanges();
     }
 
     /// <summary>
     /// Move the focused window to workspace <paramref name="n"/> (Win+Shift+N) and follow it there: the
-    /// window is unlinked from its old workspace, linked to n, and n is made the active (shown)
-    /// workspace on its home monitor — so the moved window ends up visible and focused. If n lives on a
-    /// different monitor than the window, the window is relocated to that monitor as part of the switch.
+    /// window leaves its old workspace's strip (which closes the gap), becomes a tile of n right after n's
+    /// focused tile, and n is made the active (shown) workspace on its home monitor — so the moved window
+    /// ends up in view and focused, on n's monitor.
     /// </summary>
     public void MoveFocusedWindowToWorkspace(int n)
     {
@@ -366,56 +377,19 @@ internal sealed class WorkspaceManager : IDisposable
             return;
         }
 
-        // Explicit membership: unlink the focused window from its old workspace and link it to n.
+        // Explicit membership: unlink the focused window from its old workspace and link it to n, as n's
+        // focused tile — so the layout below scrolls n's strip to it.
         GuardEvents();
-        _windowWorkspace[hWnd] = n;
+        int left = Relink(hWnd, n, OrderJoining(n, hWnd));
 
-        // Resolve n's home monitor (pinned to the cursor monitor the first time n is used) and make sure
-        // the window physically sits on it, so following the switch shows it there.
-        MonitorState? home = ResolveHome(n);
-        if (home != null
-            && TryGetWindowMonitor(hWnd, out MonitorState? srcMon)
-            && srcMon!.Handle != home.Handle)
-        {
-            MoveWindowToMonitor(hWnd, home);
-        }
-        GuardEvents();
-
-        // Follow the window: make n the active workspace on its home monitor (restoring n's windows and
-        // putting away the outgoing ones), then land focus on the window we just moved.
+        // Follow the window: make n the active workspace on its home monitor (laying out n's strip there,
+        // the moved window included, and putting away the outgoing tiles), then land focus on it.
         SwitchFocusedMonitorTo(n);
         ForceForeground(hWnd);
-        _lastActive[n] = hWnd;
+        ReflowShown(left); // the workspace it came from, if still on screen, closes the gap
+        GuardEvents();
 
         LogWorkspaces($"move-window WS{n}");
-    }
-
-    /// <summary>
-    /// Link the focused window to the workspace currently shown on its monitor (Win+Space). Membership
-    /// only: the window doesn't move and nothing is minimized — it just becomes a member of the
-    /// workspace it's visually on, so it stays put on switches and is reclaimed by that workspace. A
-    /// no-op if the window's monitor shows no workspace (Current == 0, e.g. after a release).
-    /// </summary>
-    public void LinkFocusedWindowToCurrentWorkspace()
-    {
-        IntPtr hWnd = GetForegroundWindow();
-        if (!IsManaged(hWnd))
-        {
-            return;
-        }
-
-        RefreshMonitors(); // keep monitor handles live across display-config changes
-        if (!TryGetWindowMonitor(hWnd, out MonitorState? monitor) || monitor!.Current < 1)
-        {
-            return;
-        }
-
-        GuardEvents();
-        _windowWorkspace[hWnd] = monitor.Current;
-        _lastActive[monitor.Current] = hWnd;
-        GuardEvents();
-
-        LogWorkspaces($"link {WsLabel(monitor.Current)}");
     }
 
     /// <summary>
@@ -426,7 +400,7 @@ internal sealed class WorkspaceManager : IDisposable
     ///  * Otherwise → bring the scratchpad (and its windows) onto the mouse monitor. If it was already up
     ///    on another monitor, that monitor is sent back to its previous workspace first.
     /// Windows attach to the scratchpad like any workspace: focus one while it's shown and press Win+Space
-    /// (link) — or move one in with Win+Shift to a workspace, then it follows normally.
+    /// (tile it there). Its tiles are laid out on whichever monitor it appears on.
     /// </summary>
     public void ToggleScratchpad()
     {
@@ -450,12 +424,12 @@ internal sealed class WorkspaceManager : IDisposable
         if (showing != null && showing.Device == target.Device)
         {
             // Toggle off: the mouse is on the scratchpad's monitor — restore its previous workspace.
-            RenderWorkspaceOn(showing, _scratchpadReturn, preserveVisible: false);
+            RenderWorkspaceOn(showing, _scratchpadReturn);
             _scratchpadReturn = 0;
 
             GuardEvents();
             LogWorkspaces("scratchpad off");
-            NotifyPrimaryWorkspace();
+            NotifyWorkspaceChanges();
             return;
         }
 
@@ -463,50 +437,57 @@ internal sealed class WorkspaceManager : IDisposable
         // that monitor back to the workspace it was showing before the scratchpad arrived.
         if (showing != null)
         {
-            RenderWorkspaceOn(showing, _scratchpadReturn, preserveVisible: false);
+            RenderWorkspaceOn(showing, _scratchpadReturn);
         }
 
         // Remember what the mouse monitor is showing now (to return to on toggle-off), then bring the
         // scratchpad and its windows here.
         _scratchpadReturn = target.Current >= 1 ? target.Current : 0;
-        RenderWorkspaceOn(target, ScratchpadWorkspace, preserveVisible: false);
+        RenderWorkspaceOn(target, ScratchpadWorkspace);
 
         GuardEvents();
         LogWorkspaces("scratchpad on");
-        NotifyPrimaryWorkspace();
+        NotifyWorkspaceChanges();
     }
 
     /// <summary>
-    /// Show <paramref name="workspace"/> on a specific monitor (no home resolution): put away everything
-    /// there that isn't its, restore its windows (pulling them onto this monitor), record it as shown, and
-    /// land focus. <paramref name="workspace"/> &lt; 1 means "show nothing" — just clear the monitor.
+    /// Show <paramref name="workspace"/> on a specific monitor (no home resolution): put away everything there
+    /// that isn't its (and the outgoing workspace's windows elsewhere), record it as shown, bring its windows
+    /// onto the screen, and land focus. <paramref name="workspace"/> &lt; 1 means "show nothing".
     /// </summary>
-    private void RenderWorkspaceOn(MonitorState monitor, int workspace, bool preserveVisible)
+    private void RenderWorkspaceOn(MonitorState monitor, int workspace)
     {
         int outgoing = monitor.Current;
-        if (outgoing >= 1 && outgoing != workspace)
+        bool changing = outgoing >= 1 && outgoing != workspace;
+        if (changing)
         {
-            CaptureZOrder(outgoing, monitor);
+            RememberFrontmost(outgoing, monitor);
         }
 
         MinimizeMonitorWindows(monitor, keep: workspace);
-        if (workspace >= 1)
+        if (changing)
         {
-            ShowWorkspaceOnMonitor(workspace, monitor, preserveVisible);
-            ApplyZOrder(workspace);
+            PutAwayWorkspace(outgoing);
         }
 
         SetShown(monitor, workspace);
 
         if (workspace >= 1)
         {
+            ShowWorkspace(workspace, monitor);
             FocusWorkspace(workspace);
         }
     }
 
-    private void GuardEvents() => _eventGuardUntilTick = Environment.TickCount + 1500;
+    private void GuardEvents()
+    {
+        _eventGuardUntilTick = Environment.TickCount64 + EventGuardMs;
+    }
 
-    private bool EventsGuarded => unchecked(Environment.TickCount - _eventGuardUntilTick) < 0;
+    private bool EventsGuarded
+    {
+        get { return Environment.TickCount64 < _eventGuardUntilTick; }
+    }
 
     // The active monitor is the one under the mouse cursor.
     private MonitorState? GetActiveMonitor()
@@ -523,96 +504,35 @@ internal sealed class WorkspaceManager : IDisposable
         return _monitors.Values.FirstOrDefault(s => s.Primary) ?? _monitors.Values.FirstOrDefault();
     }
 
-    // Record a workspace's current top-to-bottom window order (only its windows that are visible on this
-    // monitor). EnumWindows yields windows in Z order, topmost first — so index 0 is the frontmost.
-    private void CaptureZOrder(int workspace, MonitorState monitor)
+    // Remember a workspace's frontmost tile on this monitor as the one to focus when it comes back.
+    // EnumWindows yields windows in Z order, topmost first, so the first match is the frontmost. Trust it
+    // over _lastActive, which is fed by the foreground event hook and can miss a click made during the
+    // event guard window (e.g. clicking a window then immediately toggling the scratchpad).
+    private void RememberFrontmost(int workspace, MonitorState monitor)
     {
         if (workspace < 1)
         {
             return;
         }
 
-        var order = new List<IntPtr>();
         EnumWindows((h, _) =>
         {
-            if (!IsManaged(h) || IsIconic(h))
+            if (!_windowWorkspace.TryGetValue(h, out int ws) || ws != workspace || !IsManaged(h) || IsIconic(h)
+                || MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST) != monitor.Handle)
             {
                 return true;
             }
 
-            if (MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST) != monitor.Handle)
-            {
-                return true;
-            }
-
-            if (_windowWorkspace.TryGetValue(h, out int ws) && ws == workspace)
-            {
-                order.Add(h);
-            }
-
-            return true;
+            _lastActive[workspace] = h;
+            return false;
         }, IntPtr.Zero);
-
-        if (order.Count > 0)
-        {
-            _zorder[workspace] = order;
-            // The live frontmost window IS the one to focus on return. Trust it over _lastActive, which is
-            // fed by the foreground event hook and can miss a click made during the event guard window
-            // (e.g. clicking a window then immediately toggling the scratchpad).
-            _lastActive[workspace] = order[0];
-        }
     }
 
-    // Reproduce a workspace's captured stacking order. Re-stack from the bottom up (each window sent to the
-    // top of the Z order in turn), so the window that was frontmost when captured ends up frontmost again.
-    private void ApplyZOrder(int workspace)
-    {
-        if (!_zorder.TryGetValue(workspace, out List<IntPtr>? order))
-        {
-            return;
-        }
-
-        order.RemoveAll(h => !IsWindow(h)); // closed windows have no place in the stack anymore
-
-        for (int i = order.Count - 1; i >= 0; i--)
-        {
-            IntPtr h = order[i];
-            if (!IsIconic(h))
-            {
-                SetWindowPos(h, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-        }
-    }
-
-    private void ShowWorkspaceOnMonitor(int workspace, MonitorState monitor, bool preserveVisible = false)
-    {
-        foreach (IntPtr h in WindowsOf(workspace))
-        {
-            // On a re-press of an already-shown workspace, windows already visible on the monitor keep
-            // their current place and stacking — re-asserting must not disturb what the user is looking
-            // at. Everything else IS brought back: minimized members are restored, and windows dragged
-            // onto another monitor are pulled home.
-            //
-            // "Is it on the home monitor?" uses the window's ACTUAL displayed monitor (MonitorFromWindow),
-            // not its restored rectangle. A maximized window moved to another monitor (e.g. via
-            // Win+Shift+Arrow) keeps a restored rect pointing at the monitor it came from, so a
-            // rect-based test would wrongly skip it and never bring it back. This matches how
-            // MinimizeMonitorWindows locates windows.
-            if (preserveVisible
-                && !IsIconic(h)
-                && MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST) == monitor.Handle)
-            {
-                continue;
-            }
-
-            MoveWindowToMonitor(h, monitor);
-        }
-    }
-
-    // Minimize every visible managed window physically on the monitor, except those of workspace
-    // <paramref name="keep"/> (pass -1 to keep none). Membership is NOT touched: each window keeps the
-    // workspace it was linked to (or stays unlinked), so a window the user minimized stays a member and
-    // returns with its workspace. Windows are linked only by an explicit move or link, never by switching.
+    // Minimize every visible managed window physically on the monitor, except the windows of workspace
+    // <paramref name="keep"/> (pass -1 to keep none) — unlinked windows and other workspaces' floating
+    // windows included, so the monitor shows only the workspace being switched to (an empty workspace
+    // means an empty monitor). Membership is NOT touched: a put-away member returns with its workspace, and
+    // an unlinked window stays unlinked. Windows are linked only by an explicit command, never by switching.
     private void MinimizeMonitorWindows(MonitorState monitor, int keep)
     {
         EnumWindows((h, _) =>
@@ -629,7 +549,7 @@ internal sealed class WorkspaceManager : IDisposable
 
             if (_windowWorkspace.TryGetValue(h, out int ws) && ws == keep)
             {
-                return true; // belongs to the workspace we're showing
+                return true; // a window of the workspace we're showing
             }
 
             ShowWindow(h, SW_MINIMIZE);
@@ -657,6 +577,7 @@ internal sealed class WorkspaceManager : IDisposable
             }
 
             _windowWorkspace.Remove(h);
+            _floating.Remove(h);
             return true;
         });
 
@@ -749,6 +670,17 @@ internal sealed class WorkspaceManager : IDisposable
             ShowWindow(hWnd, SW_RESTORE);
         }
 
+        WithForegroundLockLifted(() =>
+        {
+            SetForegroundWindow(hWnd);
+            BringWindowToTop(hWnd);
+        });
+    }
+
+    // Run an action with the system foreground-lock timeout at 0, which lets this background process
+    // activate and raise other processes' windows; the user's setting is always put back.
+    private static void WithForegroundLockLifted(Action action)
+    {
         uint original = 0;
         bool got = SystemParametersInfoGet(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ref original, 0);
         if (got)
@@ -756,28 +688,29 @@ internal sealed class WorkspaceManager : IDisposable
             SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, UIntPtr.Zero, 0);
         }
 
-        SetForegroundWindow(hWnd);
-        BringWindowToTop(hWnd);
-
-        if (got)
+        try
         {
-            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, (UIntPtr)original, 0);
+            action();
+        }
+        finally
+        {
+            if (got)
+            {
+                SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, (UIntPtr)original, 0);
+            }
         }
     }
 
     private bool TryGetWindowMonitor(IntPtr hWnd, out MonitorState? monitor)
     {
-        // Use the restored (normal) position so minimized windows resolve to the right monitor.
+        // Use the DISPLAYED monitor: a maximized window moved with Win+Shift+Arrow keeps a restored rect
+        // on its old monitor. Only a minimized (off-screen) window resolves by its restored rect.
+        IntPtr hMon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         var wp = new WINDOWPLACEMENT { length = (uint)Marshal.SizeOf<WINDOWPLACEMENT>() };
-        IntPtr hMon;
-        if (GetWindowPlacement(hWnd, ref wp))
+        if (IsIconic(hWnd) && GetWindowPlacement(hWnd, ref wp))
         {
             RECT norm = wp.rcNormalPosition;
             hMon = MonitorFromRect(ref norm, MONITOR_DEFAULTTONEAREST);
-        }
-        else
-        {
-            hMon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         }
 
         return _monitors.TryGetValue(hMon, out monitor);
@@ -842,23 +775,26 @@ internal sealed class WorkspaceManager : IDisposable
 
     private void InstallWinEventHooks()
     {
-        // FOREGROUND: track each workspace's last-focused window (for focus restore on switch).
-        // We hook NOTHING that mutates membership. Membership is changed only by Win+Shift+N (move) and
-        // Win+Space (link); closed windows are pruned lazily and race-free in WindowsOf (see below). We do
-        // not hook EVENT_OBJECT_DESTROY: it is delivered asynchronously on this (sometimes stalled) thread,
-        // so during a sleep/wake window-churn a backlogged DESTROY can carry a recycled HWND that now
-        // belongs to a still-open window — removing its membership and silently unlinking it from its
-        // workspace. We also no longer hook MINIMIZEEND/MOVESIZEEND because interaction never re-links.
-        AddHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND);
+        // FOREGROUND: track each workspace's last-focused window (for focus restore on switch), and scroll a
+        // strip to a tile focused by hand. Tiling adds DESTROY/SHOW/HIDE and MOVESIZEEND (InstallTileHooks).
+        //
+        // No hook mutates membership. Membership is changed only by Win+Shift+N (move), Win+Space (tile) and
+        // Win+Shift+Space (unlink); closed windows are pruned lazily and race-free in WindowsOf (see below).
+        // EVENT_OBJECT_DESTROY is delivered asynchronously on this (sometimes stalled) thread, so during a
+        // sleep/wake window-churn a backlogged DESTROY can carry a recycled HWND that now belongs to a
+        // still-open window — acting on its handle would silently unlink that window. Tiling therefore only
+        // re-lays out on it, which re-checks every member.
+        AddHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, _winEventHooks);
+        InstallTileHooks();
     }
 
-    private void AddHook(uint eventMin, uint eventMax)
+    private void AddHook(uint eventMin, uint eventMax, List<IntPtr> hooks)
     {
         IntPtr hook = SetWinEventHook(eventMin, eventMax, IntPtr.Zero, _winEventProc, 0, 0,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
         if (hook != IntPtr.Zero)
         {
-            _winEventHooks.Add(hook);
+            hooks.Add(hook);
         }
     }
 
@@ -870,22 +806,30 @@ internal sealed class WorkspaceManager : IDisposable
             return;
         }
 
-        // Ignore events caused by our own switch operations, and non-app windows.
-        if (EventsGuarded || !IsManaged(hWnd))
+        // Before the guard: an app launched right after a workspace switch must still be placed.
+        TryPlaceLaunchedWindow(hWnd);
+
+        // Everything below is about tiles; a window that belongs to no workspace is not ours to manage.
+        if (!_windowWorkspace.TryGetValue(hWnd, out int workspace))
         {
             return;
         }
 
-        // Window membership is NOT changed by interaction: activating, restoring, maximizing or dragging
-        // a window no longer pulls it into the workspace shown on its monitor. Membership is explicit —
-        // set at startup and changed only by "move focused window to workspace N" (Win+Shift+N). Here we
-        // just remember the last-focused window of the workspace a window already belongs to, so focus
-        // can be restored when that workspace is shown again.
-        if (eventType == EVENT_SYSTEM_FOREGROUND
-            && _windowWorkspace.TryGetValue(hWnd, out int ownWorkspace))
+        if (eventType == EVENT_SYSTEM_FOREGROUND)
         {
-            _lastActive[ownWorkspace] = hWnd;
+            // Ignore focus changes caused by our own switch operations, and non-app windows.
+            if (EventsGuarded || !IsManaged(hWnd))
+            {
+                return;
+            }
+
+            // Window membership is NOT changed by interaction: activating, restoring, maximizing or dragging
+            // a window never pulls it into the workspace shown on its monitor. Here we just remember the
+            // last-focused tile of its workspace, so focus can be restored when that workspace is shown again.
+            _lastActive[workspace] = hWnd;
         }
+
+        OnTileEvent(eventType, hWnd, workspace);
     }
 
     private void LogWorkspaces(string action)
@@ -925,9 +869,6 @@ internal sealed class WorkspaceManager : IDisposable
     private const uint SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000;
     private const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
 
-    private static readonly IntPtr HWND_TOP = IntPtr.Zero;
-    private const uint SWP_NOSIZE = 0x0001;
-    private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOACTIVATE = 0x0010;
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);

@@ -13,7 +13,8 @@ namespace Winland.Keys;
 internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
 {
     private readonly KeyboardHook _hook;
-    private List<KeyBind> _binds;
+    private readonly AppLauncher _launcher = new(new EnvClient());
+    private readonly IReadOnlyList<KeyBind> _binds;
     private bool _disposed;
 
     public KeysApp()
@@ -58,7 +59,7 @@ internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
         int index = actionId - 1;
         if (index >= 0 && index < _binds.Count)
         {
-            AppLauncher.Run(_binds[index].Action);
+            _launcher.Run(_binds[index].Action);
         }
     }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using Winland.Common;
 
 namespace Winland.Env;
 
@@ -32,6 +33,8 @@ internal sealed class UiInvoker : NativeWindow, IDisposable
         lock (_gate)
         {
             _input = command;
+            // Kept only if the message is never handled (window already destroyed during shutdown).
+            _output = $"{Ipc.ErrPrefix} environment is shutting down";
             SendMessage(Handle, WM_INVOKE, IntPtr.Zero, IntPtr.Zero); // synchronous: WndProc runs on the UI thread
             return _output;
         }
@@ -41,8 +44,16 @@ internal sealed class UiInvoker : NativeWindow, IDisposable
     {
         if (m.Msg == WM_INVOKE)
         {
-            try { _output = _handler(_input); }
-            catch (Exception ex) { _output = $"ERR {ex.Message}"; }
+            try
+            {
+                _output = _handler(_input);
+            }
+            catch (Exception ex)
+            {
+                Log.Line($"command '{_input}' failed: {ex}");
+                _output = $"{Ipc.ErrPrefix} {ex.Message}";
+            }
+
             return;
         }
 

@@ -22,6 +22,11 @@ Defined as `config.conf` binds (not hardcoded), each running a `winlandctl` verb
 
 The directional/close combos ship as plain Win combos (no Shift/Alt/Ctrl).
 
+When the focused window is a **tile**, `focus left`/`right` first step to the neighbouring tile in its
+strip, scrolling the strip if needed (`WorkspaceManager.FocusAdjacentTile`, see `tiling.md`). The
+geometric search below is used for `up`/`down`, for windows that aren't tiles, and past either end of
+a strip.
+
 ## 3. Directional Focus Algorithm
 
 Entry point: `WindowNavigator.FocusNearest(Direction)`.
@@ -42,7 +47,7 @@ A candidate is rejected if any are true:
 - Desktop shell window class (`Progman`, `WorkerW`).
 - Empty title text.
 - DWM cloaked.
-- Fully occluded by windows above it in Z-order.
+- Fully occluded by (non-cloaked) windows above it in Z-order.
 - Show command indicates minimized state in placement data.
 
 ### 3.4 Distance Scoring
@@ -58,7 +63,19 @@ Selection rule:
 ### 3.5 Focus Action
 - On best candidate found:
   - Log process name best-effort.
-  - Call `SetForegroundWindow(bestHandle)`.
+  - Bring it to the foreground with the same foreground-lock-timeout suppression `focus-app` and the
+    workspace engine use (a plain `SetForegroundWindow` is refused because `winland-env` never owns
+    the input).
+- The `Dispatcher` then moves the mouse to the newly focused window (§3.6).
+
+### 3.6 The Mouse Follows Focus (`CursorWarp`)
+`focus`, `focus-app`, `focus-web`, `move-window`, `link-here` and `movetoworkspace` run through
+`Dispatcher.FollowedByCursor`: it records the foreground window and its visible frame (DWM extended
+frame bounds) before the command, and afterwards — if the foreground window or its frame changed and
+the cursor isn't already over it (`WindowFromPoint` → root) — calls `SetCursorPos` on the centre of its
+frame. A command that changes nothing leaves the mouse alone. Workspace switches, the scratchpad and
+release don't warp: the mouse's monitor picks where they act, and the focus change of a switch can be a
+side effect of putting windows away.
 
 ## 4. Focus by Process (`focus-app <process>`)
 

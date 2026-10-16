@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Winland.Common;
 
 namespace Winland.Keys;
 
@@ -13,10 +14,23 @@ namespace Winland.Keys;
 /// token (via <see cref="UnelevatedLauncher"/>) — otherwise everything a bind starts would inherit this
 /// daemon's elevation. Window management needs no elevation here: it lives in winland-env, reached
 /// through the sibling winlandctl.exe (which the pipe accepts from unelevated callers too).
+///
+/// Before a shell command runs, winland-env is asked to place the next new window on the monitor under
+/// the mouse. Scripts do that themselves when they actually launch something (launch-or-focus only
+/// launches when it found nothing to focus).
 /// </summary>
-internal static class AppLauncher
+internal sealed class AppLauncher
 {
-    public static void Run(BindAction action)
+    private const string PlaceNextWindowCommand = "place-next-window";
+
+    private readonly EnvClient _env;
+
+    public AppLauncher(EnvClient env)
+    {
+        _env = env;
+    }
+
+    public void Run(BindAction action)
     {
         try
         {
@@ -39,7 +53,7 @@ internal static class AppLauncher
             string siblingExe = Path.Combine(baseDir, verb + ".exe");
             if (File.Exists(siblingExe))
             {
-                Process.Start(new ProcessStartInfo(siblingExe, args)
+                using Process? sibling = Process.Start(new ProcessStartInfo(siblingExe, args)
                 {
                     UseShellExecute = false,
                     CreateNoWindow = true
@@ -47,11 +61,13 @@ internal static class AppLauncher
                 return;
             }
 
+            _env.TrySend(PlaceNextWindowCommand);
             RunShellCommand(verb, args);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored — a broken bind must not take the daemon down
+            // A broken bind must not take the daemon down.
+            Log.Line($"bind failed: {action.Command}: {ex.Message}");
         }
     }
 
@@ -69,7 +85,7 @@ internal static class AppLauncher
 
         if (!UnelevatedLauncher.Start(powershell, psArgs, baseDir))
         {
-            Process.Start(new ProcessStartInfo(powershell, psArgs)
+            using Process? process = Process.Start(new ProcessStartInfo(powershell, psArgs)
             {
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -85,7 +101,7 @@ internal static class AppLauncher
         string commandLine = args.Length == 0 ? $"\"{verb}\"" : $"\"{verb}\" {args}";
         if (!UnelevatedLauncher.StartViaShell(commandLine))
         {
-            Process.Start(new ProcessStartInfo(verb, args) { UseShellExecute = true });
+            using Process? process = Process.Start(new ProcessStartInfo(verb, args) { UseShellExecute = true });
         }
     }
 

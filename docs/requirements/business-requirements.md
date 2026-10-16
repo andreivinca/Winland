@@ -9,10 +9,11 @@ Winland provides keyboard-first desktop productivity on Windows through three co
 
 The product goal is to deliver Hyprland/Omarchy-style workflow ergonomics on Windows while remaining lightweight, tray-resident, and fast to use.
 
-Implementation note: Winland is delivered as three cooperating processes — `winland-keys` (the
-hotkey daemon), `winland-env` (the window-manager service), and `winlandctl` (a control CLI). This is
-an architectural detail, not a product feature; the requirements below describe user-facing behavior
-regardless of process boundaries. See `architecture-overview.md`.
+Implementation note: Winland is delivered as four cooperating processes — `winland-keys` (the
+hotkey daemon), `winland-env` (the window-manager service), `winlandctl` (a control CLI), and
+`winland-indicator` (the on-screen workspace circles). This is an architectural detail, not a product
+feature; the requirements below describe user-facing behavior regardless of process boundaries. See
+`architecture-overview.md`.
 
 ## 2. Product Vision
 
@@ -46,8 +47,13 @@ Primary users:
 - Workspace “home monitor” concept:
   - First entry pins workspace to monitor under cursor.
   - Later switches target that monitor.
-- A window joins a workspace only on explicit move (`Win+Shift+N`) or link (`Win+Space`) — never as a
-  side effect of interacting with it.
+- A window joins a workspace only on explicit move (`Win+Shift+N`) or tile (`Win+Space`) — never as a
+  side effect of interacting with it — and leaves it only on unlink (`Win+Shift+Space`), a move, or
+  closing.
+- A workspace's windows are tiled in a row that shares the monitor and scrolls once they no longer
+  fit; tiles never appear on another monitor. Windows that belong to no workspace keep normal
+  Windows behavior and are never tiled or resized by Winland; a workspace switch still puts them away
+  with everything else on that monitor, so an empty workspace shows an empty monitor.
 - A roaming **scratchpad** (`Win+S`) that appears on the monitor under the mouse and hides again on
   the next press.
 - Ability to release current workspace from monitor (`Win+Shift+W`).
@@ -65,6 +71,7 @@ Primary users:
 - Includes bundled scripts:
   - `launch-or-focus.ps1`
   - `launch-web.ps1`
+  - `launch-or-focus-web.ps1`
   - `show-desktop.ps1`
 
 ### 5.4 Re-registered Windows Shell Shortcuts
@@ -80,7 +87,8 @@ Primary users:
   single elevation prompt.
 - `winland-keys` logs its startup status (hook installed / failed); `winland-env` shows a control-
   channel balloon.
-- The `winland-env` tray icon displays the active workspace number of the primary monitor.
+- The `winland-env` tray icon is a static Winland badge; the active workspace of every monitor is
+  shown by the on-screen indicator circles (`winland-indicator`).
 
 ### 6.2 Discoverability
 - The `winland-env` tray menu must expose:

@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Win32;
+using Winland.Common;
 
 namespace Winland.Keys;
 
@@ -31,9 +33,10 @@ internal static class WindowsHotkeyDisabler
             key.SetValue("NoWinKeys", 1, RegistryValueKind.DWord);
             RestartExplorer();
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored (e.g. the policy key is org-locked even for admins)
+            // e.g. the policy key is org-locked even for admins.
+            Log.Line($"NoWinKeys policy not set: {ex.Message}");
         }
     }
 
@@ -54,26 +57,61 @@ internal static class WindowsHotkeyDisabler
                 PostMessage(taskbar, WM_USER + 436, IntPtr.Zero, IntPtr.Zero);
             }
 
-            if (!WaitFor(() => Process.GetProcessesByName("explorer").Length == 0, timeoutMs: 3000))
+            if (!WaitFor(() => CountSessionExplorers() == 0, timeoutMs: 3000))
             {
-                foreach (Process p in Process.GetProcessesByName("explorer"))
+                foreach (Process p in SessionExplorers())
                 {
-                    try { p.Kill(); } catch { /* ignored */ }
+                    using (p)
+                    {
+                        try { p.Kill(); } catch { /* already gone */ }
+                    }
                 }
             }
 
-            if (!WaitFor(() => Process.GetProcessesByName("explorer").Length > 0, timeoutMs: 3000))
+            if (!WaitFor(() => CountSessionExplorers() > 0, timeoutMs: 3000))
             {
                 // Last resort, e.g. AutoRestartShell disabled. Started from this elevated process the
                 // shell would inherit elevation, but with no shell running there is no unelevated token
                 // left to borrow — an elevated shell beats no shell.
-                Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true });
+                using Process? shell = Process.Start(new ProcessStartInfo("explorer.exe") { UseShellExecute = true });
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            Log.Line($"explorer restart failed: {ex.Message}");
         }
+    }
+
+    /// <summary>Explorer processes in THIS logon session — never another signed-in user's shell.</summary>
+    private static List<Process> SessionExplorers()
+    {
+        using Process current = Process.GetCurrentProcess();
+        int session = current.SessionId;
+        var mine = new List<Process>();
+        foreach (Process p in Process.GetProcessesByName("explorer"))
+        {
+            if (p.SessionId == session)
+            {
+                mine.Add(p);
+            }
+            else
+            {
+                p.Dispose();
+            }
+        }
+
+        return mine;
+    }
+
+    private static int CountSessionExplorers()
+    {
+        List<Process> explorers = SessionExplorers();
+        foreach (Process p in explorers)
+        {
+            p.Dispose();
+        }
+
+        return explorers.Count;
     }
 
     /// <summary>Poll <paramref name="condition"/> until it holds or the timeout passes.</summary>

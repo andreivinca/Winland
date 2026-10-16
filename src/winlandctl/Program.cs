@@ -18,7 +18,7 @@ string command = string.Join(' ', args);
 
 try
 {
-    using var client = new NamedPipeClientStream(".", Ipc.PipeName, PipeDirection.InOut);
+    using var client = new NamedPipeClientStream(".", Ipc.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
     client.Connect(2000);
 
     // Deliberately NOT wrapping the writer/reader in `using`: the server closes its end immediately
@@ -28,7 +28,18 @@ try
     var reader = new StreamReader(client);
 
     writer.WriteLine(command);
-    string? response = reader.ReadLine();
+
+    // Bounded wait: a wedged environment must not leave one stuck winlandctl behind per key press.
+    string? response;
+    try
+    {
+        response = reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+    }
+    catch (TimeoutException)
+    {
+        Console.Error.WriteLine("winlandctl: winland-env did not reply (timed out)");
+        return 1;
+    }
 
     if (response is null)
     {
@@ -46,7 +57,7 @@ try
 }
 catch (TimeoutException)
 {
-    Console.Error.WriteLine("winlandctl: winland-env is not running (connect timed out)");
+    Console.Error.WriteLine("winlandctl: winland-env is not running or is busy (connect timed out)");
     return 3;
 }
 catch (UnauthorizedAccessException)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Winland.Common;
 
 namespace Winland.Keys;
 
@@ -44,7 +45,7 @@ internal static class HotkeyConfig
             }
             else
             {
-                Log($"ignored bind: {value}");
+                Log.Line($"ignored bind: {value}");
             }
         }
 
@@ -171,6 +172,4 @@ internal static class HotkeyConfig
 
         return false;
     }
-
-    private static void Log(string message) => Winland.Common.Log.Line(message);
 }
