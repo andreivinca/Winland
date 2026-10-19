@@ -109,7 +109,7 @@ on the command pipe.
 
 ### 5.3 Dispatcher verbs
 - `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected), `link-here`,
-  `unlink`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
+  `unlink`, `toggle-float`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
   `move-window <left|right>`, `focus-app <process>`,
   `focus-web <url>`, `close`,
   `place-next-window` (the next new app window opens on the monitor under the mouse);
@@ -228,7 +228,7 @@ Z-order predecessors; not minimized per its window placement.
 - `close` posts `WM_CLOSE` to the foreground window.
 
 ### 7.5 The Mouse Follows Focus
-- After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here` and `movetoworkspace`, if the
+- After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-float` and `movetoworkspace`, if the
   foreground window or its visible frame changed and the cursor isn't over it, move the cursor to the
   centre of its frame (`CursorWarp`).
 - After showing a workspace (`workspace`, `scratchpad` on/off), move the cursor to the centre of the

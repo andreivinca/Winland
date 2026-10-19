@@ -4,7 +4,8 @@ using Winland.Common;
 namespace Winland.Env;
 
 /// <summary>
-/// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "unlink", "scratchpad",
+/// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "unlink", "toggle-float",
+/// "scratchpad",
 /// "workspace-release", "focus left", "move-window right", "focus-app firefox",
 /// "focus-web https://gemini.google.com", "close", "place-next-window") to the matching
 /// in-process operation. The single source of truth for what the environment can do; reached from the
@@ -51,6 +52,10 @@ internal sealed class Dispatcher
 
             case "unlink":
                 _workspaces.UnlinkFocusedWindow();
+                return Ipc.Ok;
+
+            case "toggle-float":
+                FollowedByCursor(_workspaces.ToggleFloating);
                 return Ipc.Ok;
 
             case "scratchpad":

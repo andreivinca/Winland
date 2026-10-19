@@ -47,10 +47,10 @@ at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-lo
   open, drag, resize, maximize and snap it as usual, and Winland never tiles or resizes it. It belongs to
   no workspace, so a workspace switch puts it away with everything else on that monitor, and it doesn't
   come back with any workspace. Windows that are open when Winland starts are all normal windows.
-- **Drag a tile** (or resize it) with the mouse and it leaves the row and **floats** right where you put
-  it — Windows handles it from then on — but it stays in its workspace: it's put away and brought back
-  with it, exactly where you left it and in front of the tiles, even on another monitor. `Win+Space`
-  puts it back in the row.
+- **Drag a tile** (or resize it) with the mouse — or press `Win+T` — and it leaves the row and
+  **floats** right where it is — Windows handles it from then on — but it stays in its workspace: it's put
+  away and brought back with it, exactly where you left it and in front of the tiles, even on another
+  monitor. `Win+T` puts it back in its own workspace's row.
 - There's also a **scratchpad** (`Win+S`): a workspace with no home monitor that pops up on whatever
   monitor your mouse is on, and disappears again on the next press.
 
@@ -96,6 +96,7 @@ ends up in view and focused — if the target lives on a different monitor, the 
 | --- | --- |
 | `Win`+`Space` | **Tile** the focused window into the workspace shown on its monitor. On a floating window of that workspace, put it back in its place in the row; on a tile, snap it back into its column. |
 | `Win`+`Shift`+`Space` | **Unlink** the focused window: it leaves its workspace and becomes a normal window again, and the other tiles close the gap. |
+| `Win`+`T` | **Pop out / put back.** On a tile: it floats where it is, still in its workspace, and the row closes the gap. On a floating window: it goes back into its **own** workspace's row at its old place — even from another monitor (if that workspace isn't shown, it is shown). On a window in no workspace: same as `Win`+`Space`. |
 | `Win`+`←` `→` | On a tile: focus the tile beside it, scrolling the row if it's out of view. Past either end of the row (or on any other window), focus the nearest window in that direction. |
 | `Win`+`Shift`+`←` `→` | On a tile: swap it with its neighbour; from the end of the row it moves onto the next monitor's workspace. On any other window: move it to the next monitor (a floating window stays in its workspace). |
 
@@ -200,6 +201,7 @@ them yourself from a terminal):
 | `winlandctl movetoworkspace <n>` | Move the focused window to workspace `n` (as a tile) and follow it. |
 | `winlandctl link-here` | Tile the focused window into the workspace shown on its monitor. |
 | `winlandctl unlink` | Unlink the focused window from its workspace — a normal window again. |
+| `winlandctl toggle-float` | Pop the focused tile out of its row, or put a floating window back into its own workspace's row. |
 | `winlandctl scratchpad` | Toggle the roaming scratchpad on the monitor under the mouse. |
 | `winlandctl workspace-release` | Release the current workspace from its monitor. |
 | `winlandctl focus left\|right\|up\|down` | Focus the next tile (`left`/`right`, scrolling) or the nearest window in that direction. |
@@ -245,6 +247,7 @@ bind = SUPER SHIFT 2, winlandctl movetoworkspace 2
 # Tile / unlink the focused window, and move a tile along its row
 bind = SUPER SPACE, winlandctl link-here
 bind = SUPER SHIFT SPACE, winlandctl unlink
+bind = SUPER T, winlandctl toggle-float
 bind = SUPER SHIFT LEFT, winlandctl move-window left
 bind = SUPER SHIFT RIGHT, winlandctl move-window right
 

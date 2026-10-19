@@ -122,6 +122,68 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
+    /// Pop the focused window out of tiling, or put it back (Win+T):
+    ///  * A tile floats where it is — still in its workspace — and the strip closes the gap, as if the user
+    ///    had dragged it out.
+    ///  * A floating window goes back into its OWN workspace's strip, at its old place, wherever it was
+    ///    floating (unlike Win+Space, which takes the workspace shown on the window's monitor). If that
+    ///    workspace isn't on screen, it is shown on its home monitor with the window in view.
+    ///  * A window in no workspace is tiled into the workspace shown on its monitor, like Win+Space.
+    /// </summary>
+    public void ToggleFloating()
+    {
+        IntPtr hWnd = GetForegroundWindow();
+        if (!IsManaged(hWnd))
+        {
+            return;
+        }
+
+        if (!_windowWorkspace.TryGetValue(hWnd, out int workspace))
+        {
+            LinkFocusedWindowToCurrentWorkspace();
+            return;
+        }
+
+        RefreshMonitors();
+
+        GuardEvents();
+        if (!_floating.Contains(hWnd))
+        {
+            _floating.Add(hWnd);
+            ReflowShown(workspace);
+            ForceForeground(hWnd); // above the tiles that just moved in under it
+            GuardEvents();
+
+            LogTiles($"float {WsLabel(workspace)}", workspace, hWnd);
+            return;
+        }
+
+        Relink(hWnd, workspace, OrderJoining(workspace, hWnd)); // its own workspace: back at its old place
+        MonitorState? monitor = MonitorShowing(workspace);
+        if (monitor != null)
+        {
+            LayoutWorkspace(workspace, monitor, hWnd);
+        }
+        GuardEvents();
+
+        LogTiles($"tile {WsLabel(workspace)}", workspace, hWnd);
+
+        if (monitor == null)
+        {
+            // Tiles show only with their workspace. Show it, with this window in view and focused — or, for
+            // the scratchpad (which only its own toggle shows), put the window away with it.
+            if (workspace == ScratchpadWorkspace)
+            {
+                ShowWindow(hWnd, SW_MINIMIZE);
+            }
+            else
+            {
+                SwitchFocusedMonitorTo(workspace);
+            }
+        }
+    }
+
+    /// <summary>
     /// Focus the neighbouring tile to the left or right of the focused tile, scrolling the strip when it is
     /// out of view. Returns false — so the caller can fall back to plain directional focus — when the focused
     /// window isn't a tile on screen, the direction isn't left or right, or the strip ends there.

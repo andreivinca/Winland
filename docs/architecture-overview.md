@@ -138,6 +138,8 @@ It has **no keyboard hook**: every action originates from the pipe.
   - `movetoworkspace <n>` → `WorkspaceManager.MoveFocusedWindowToWorkspace`
   - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace` (tile it)
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
+  - `toggle-float` → `WorkspaceManager.ToggleFloating` (pop a tile out of its strip, or put a floating
+    window back into its own workspace's strip)
   - `scratchpad` → `WorkspaceManager.ToggleScratchpad`
   - `workspace-release` → `WorkspaceManager.ReleaseCurrentWorkspace`
   - `focus <left|right|up|down>` → `WorkspaceManager.FocusAdjacentTile` (left/right within a tile

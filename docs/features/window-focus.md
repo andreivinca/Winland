@@ -69,7 +69,7 @@ Selection rule:
 - The `Dispatcher` then moves the mouse to the newly focused window (§3.6).
 
 ### 3.6 The Mouse Follows Focus (`CursorWarp`)
-`focus`, `focus-app`, `focus-web`, `move-window`, `link-here` and `movetoworkspace` run through
+`focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-float` and `movetoworkspace` run through
 `Dispatcher.FollowedByCursor`: it records the foreground window and its visible frame (DWM extended
 frame bounds) before the command, and afterwards — if the foreground window or its frame changed and
 the cursor isn't already over it (`WindowFromPoint` → root) — calls `SetCursorPos` on the centre of its

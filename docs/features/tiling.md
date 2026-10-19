@@ -59,6 +59,7 @@ their place in the order but take no column.
 | --- | --- |
 | `link-here` | Link the focused window to the workspace shown on its monitor as a tile: a new member right after that workspace's focused tile, a floating member back at its old place. On one of its tiles: snap it back into its column. No-op on a monitor showing no workspace. |
 | `unlink` | Remove the focused window from its workspace; it stays where it is, in front, as a normal window. The strip closes the gap. |
+| `toggle-float` | On a tile: float it where it is (still a member) and close the gap — like a drag. On a floating member: re-tile it into its **own** workspace at its old place, from any monitor; if that workspace isn't shown, `workspace` is switched to it (the scratchpad, shown only by its toggle, is put away instead). On a window in no workspace: `link-here`. |
 | `movetoworkspace n` | Re-link as a tile of `n` (after `n`'s focused tile), switch to `n`, focus it. The old workspace closes the gap if it is on screen. |
 | `focus left\|right` | On a tile: focus the neighbouring tile and scroll it into view. Past either end of the strip, on any other window, or for `up`/`down`: geometric `FocusNearest` (see `window-focus.md`). |
 | `move-window left\|right` | On a tile: trade places with the neighbour (`TileOrder.MoveTo`). At the end of the strip: join the workspace shown on the adjacent monitor in that direction, entering at the near end (no-op if it shows none). On any other window: `MoveWindowToMonitor` to the adjacent monitor, membership unchanged. |
@@ -76,7 +77,7 @@ minimizes all its windows, wherever they are.
 The viewport always keeps the workspace's focused tile (`_lastActive`) in view: every layout reveals it
 unless a command reveals another tile.
 
-After `link-here`, `movetoworkspace`, `focus` and `move-window`, the mouse is moved onto the focused
+After `link-here`, `toggle-float`, `movetoworkspace`, `focus` and `move-window`, the mouse is moved onto the focused
 tile if focus or its position changed and the cursor isn't over it already (`CursorWarp`, see
 `window-focus.md` §3.6).
 
