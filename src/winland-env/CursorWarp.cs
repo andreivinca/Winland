@@ -9,10 +9,10 @@ namespace Winland.Env;
 /// over whatever used to be there, and with "focus follows mouse" (or simply the next click or scroll) the
 /// user ends up acting on the wrong window.
 ///
-/// The Dispatcher applies it to the commands that deliberately focus or move a window. Workspace
-/// switches don't warp: the mouse's monitor is how the user points a new workspace, the scratchpad, or a
-/// release at a monitor, and a switch's focus change can be a side effect (Windows activating whatever
-/// is left when the outgoing windows are put away).
+/// The Dispatcher applies <see cref="Follow"/> to the commands that deliberately focus or move a window.
+/// Showing a workspace uses <see cref="ToWindow"/> / <see cref="ToArea"/> instead, with the window it
+/// focused (or its monitor, when it has none): its focus change can't be read off the foreground window,
+/// which may be whatever Windows activated while the outgoing windows were put away.
 /// </summary>
 internal static class CursorWarp
 {
@@ -29,13 +29,25 @@ internal static class CursorWarp
     public static void Follow(FocusState before)
     {
         FocusState after = Capture();
-        if (!GetCursorPos(out POINT cursor))
+        if (GetCursorPos(out POINT cursor) && WarpTarget(before, after, IsOver(after.Window, cursor)) is (int x, int y))
         {
-            return;
+            SetCursorPos(x, y);
         }
+    }
 
-        bool over = GetAncestor(WindowFromPoint(cursor), GA_ROOT) == after.Window;
-        if (WarpTarget(before, after, over) is (int x, int y))
+    /// <summary>Put the mouse on <paramref name="window"/>: the centre of its frame, unless it is over it already.</summary>
+    public static void ToWindow(IntPtr window)
+    {
+        if (GetCursorPos(out POINT cursor) && WindowTarget(FrameOf(window), IsOver(window, cursor)) is (int x, int y))
+        {
+            SetCursorPos(x, y);
+        }
+    }
+
+    /// <summary>Put the mouse on <paramref name="area"/> (e.g. a monitor): its centre, unless it is inside already.</summary>
+    public static void ToArea(TileRect area)
+    {
+        if (GetCursorPos(out POINT cursor) && AreaTarget(area, cursor.X, cursor.Y) is (int x, int y))
         {
             SetCursorPos(x, y);
         }
@@ -45,20 +57,24 @@ internal static class CursorWarp
     /// Where the cursor should go after a command: the centre of the focused window when focus moved to
     /// it or it moved, and the cursor isn't over it already; otherwise null (leave the mouse alone).
     /// </summary>
-    internal static (int X, int Y)? WarpTarget(FocusState before, FocusState after, bool cursorOverWindow)
+    internal static (int X, int Y)? WarpTarget(FocusState before, FocusState after, bool cursorOverWindow) =>
+        after.Window == IntPtr.Zero || after == before ? null : WindowTarget(after.Frame, cursorOverWindow);
+
+    /// <summary>The centre of a window's <paramref name="frame"/>, or null when there is none or the cursor is over it.</summary>
+    internal static (int X, int Y)? WindowTarget(TileRect frame, bool cursorOverWindow) =>
+        frame.Width <= 0 || frame.Height <= 0 || cursorOverWindow ? null : Centre(frame);
+
+    /// <summary>The centre of <paramref name="area"/>, or null when it is empty or the cursor is inside it.</summary>
+    internal static (int X, int Y)? AreaTarget(TileRect area, int cursorX, int cursorY)
     {
-        if (after.Window == IntPtr.Zero || after.Frame.Width <= 0 || after.Frame.Height <= 0)
-        {
-            return null;
-        }
-
-        if (after == before || cursorOverWindow)
-        {
-            return null;
-        }
-
-        return ((after.Frame.Left + after.Frame.Right) / 2, (after.Frame.Top + after.Frame.Bottom) / 2);
+        bool inside = cursorX >= area.Left && cursorX < area.Right && cursorY >= area.Top && cursorY < area.Bottom;
+        return area.Width <= 0 || area.Height <= 0 || inside ? null : Centre(area);
     }
+
+    private static (int X, int Y) Centre(TileRect r) => ((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
+
+    private static bool IsOver(IntPtr window, POINT cursor) =>
+        window != IntPtr.Zero && GetAncestor(WindowFromPoint(cursor), GA_ROOT) == window;
 
     /// <summary>The window's visible frame on screen (without the invisible resize border).</summary>
     private static TileRect FrameOf(IntPtr window)

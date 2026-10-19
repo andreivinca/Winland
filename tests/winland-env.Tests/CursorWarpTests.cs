@@ -53,4 +53,29 @@ public sealed class CursorWarpTests
         Assert.IsNull(CursorWarp.WarpTarget(before, new CursorWarp.FocusState(IntPtr.Zero, RightColumn), cursorOverWindow: false));
         Assert.IsNull(CursorWarp.WarpTarget(before, new CursorWarp.FocusState(Right, default), cursorOverWindow: false));
     }
+
+    [TestMethod]
+    public void WindowTarget_IsTheWindowsCentreUnlessTheMouseIsAlreadyOverIt()
+    {
+        Assert.AreEqual((959, 516), CursorWarp.WindowTarget(RightColumn, cursorOverWindow: false));
+        Assert.IsNull(CursorWarp.WindowTarget(RightColumn, cursorOverWindow: true));
+        Assert.IsNull(CursorWarp.WindowTarget(default, cursorOverWindow: false), "no frame (e.g. minimized): leave it");
+    }
+
+    [TestMethod]
+    public void AreaTarget_FromAnotherMonitor_IsThatMonitorsCentre()
+    {
+        var leftMonitor = new TileRect(-1920, 0, 0, 1032);
+
+        Assert.AreEqual((-960, 516), CursorWarp.AreaTarget(leftMonitor, cursorX: 700, cursorY: 400));
+    }
+
+    [TestMethod]
+    public void AreaTarget_WhenTheMouseIsAlreadyOnTheMonitor_LeavesItThere()
+    {
+        var leftMonitor = new TileRect(-1920, 0, 0, 1032);
+
+        Assert.IsNull(CursorWarp.AreaTarget(leftMonitor, cursorX: -1500, cursorY: 900));
+        Assert.IsNull(CursorWarp.AreaTarget(default, cursorX: 0, cursorY: 0), "an empty area: leave it");
+    }
 }

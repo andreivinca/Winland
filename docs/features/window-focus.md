@@ -73,9 +73,14 @@ Selection rule:
 `Dispatcher.FollowedByCursor`: it records the foreground window and its visible frame (DWM extended
 frame bounds) before the command, and afterwards — if the foreground window or its frame changed and
 the cursor isn't already over it (`WindowFromPoint` → root) — calls `SetCursorPos` on the centre of its
-frame. A command that changes nothing leaves the mouse alone. Workspace switches, the scratchpad and
-release don't warp: the mouse's monitor picks where they act, and the focus change of a switch can be a
-side effect of putting windows away.
+frame. A command that changes nothing leaves the mouse alone.
+
+Showing a workspace — `workspace`, and `scratchpad` on or off — can't use that diff: while the outgoing
+windows are put away Windows may activate any window. So `WorkspaceManager.BringCursorTo` takes the
+window `FocusWorkspace` focused and calls `CursorWarp.ToWindow` (its frame's centre, unless the cursor is
+over it); a workspace with nothing to focus calls `CursorWarp.ToArea` with its monitor's work area (the
+centre, unless the cursor is on that monitor already), so a shortcut launched next opens there.
+`workspace-release` doesn't move the mouse.
 
 ## 4. Focus by Process (`focus-app <process>`)
 

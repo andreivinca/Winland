@@ -248,9 +248,9 @@ internal sealed partial class WorkspaceManager : IDisposable
         SetShown(home, k); // remember across sleep; ensure no other monitor still claims k
 
         // Lay out k's strip on its home monitor, scrolled to its focused tile, and bring back its floating
-        // windows where they were left.
+        // windows where they were left. Then focus it, and put the mouse on it.
         ShowWorkspace(k, home);
-        FocusWorkspace(k);
+        BringCursorTo(FocusWorkspace(k), home);
         GuardEvents();
 
         LogWorkspaces(already ? $"reclaim WS{k}" : $"switch WS{k}");
@@ -424,7 +424,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         if (showing != null && showing.Device == target.Device)
         {
             // Toggle off: the mouse is on the scratchpad's monitor — restore its previous workspace.
-            RenderWorkspaceOn(showing, _scratchpadReturn);
+            BringCursorTo(RenderWorkspaceOn(showing, _scratchpadReturn), showing);
             _scratchpadReturn = 0;
 
             GuardEvents();
@@ -443,7 +443,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         // Remember what the mouse monitor is showing now (to return to on toggle-off), then bring the
         // scratchpad and its windows here.
         _scratchpadReturn = target.Current >= 1 ? target.Current : 0;
-        RenderWorkspaceOn(target, ScratchpadWorkspace);
+        BringCursorTo(RenderWorkspaceOn(target, ScratchpadWorkspace), target);
 
         GuardEvents();
         LogWorkspaces("scratchpad on");
@@ -453,9 +453,10 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// <summary>
     /// Show <paramref name="workspace"/> on a specific monitor (no home resolution): put away everything there
     /// that isn't its (and the outgoing workspace's windows elsewhere), record it as shown, bring its windows
-    /// onto the screen, and land focus. <paramref name="workspace"/> &lt; 1 means "show nothing".
+    /// onto the screen, and land focus. <paramref name="workspace"/> &lt; 1 means "show nothing". Returns the
+    /// window it focused, or Zero.
     /// </summary>
-    private void RenderWorkspaceOn(MonitorState monitor, int workspace)
+    private IntPtr RenderWorkspaceOn(MonitorState monitor, int workspace)
     {
         int outgoing = monitor.Current;
         bool changing = outgoing >= 1 && outgoing != workspace;
@@ -472,10 +473,29 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         SetShown(monitor, workspace);
 
-        if (workspace >= 1)
+        if (workspace < 1)
         {
-            ShowWorkspace(workspace, monitor);
-            FocusWorkspace(workspace);
+            return IntPtr.Zero;
+        }
+
+        ShowWorkspace(workspace, monitor);
+        return FocusWorkspace(workspace);
+    }
+
+    /// <summary>
+    /// The mouse follows a workspace onto the screen: onto the window that now has focus there, or — when
+    /// the workspace has none — onto the monitor showing it, so a shortcut launched next opens there. It
+    /// stays put if it is over that window (or on that monitor) already.
+    /// </summary>
+    private static void BringCursorTo(IntPtr focused, MonitorState monitor)
+    {
+        if (focused != IntPtr.Zero)
+        {
+            CursorWarp.ToWindow(focused);
+        }
+        else
+        {
+            CursorWarp.ToArea(new TileRect(monitor.Work.Left, monitor.Work.Top, monitor.Work.Right, monitor.Work.Bottom));
         }
     }
 
@@ -641,7 +661,8 @@ internal sealed partial class WorkspaceManager : IDisposable
         return GetMonitorInfo(hMon, ref info) ? info.rcWork : new RECT();
     }
 
-    private void FocusWorkspace(int workspace)
+    // Focus a workspace's last-active window (or another of its windows on screen); returns it, or Zero.
+    private IntPtr FocusWorkspace(int workspace)
     {
         IntPtr target = IntPtr.Zero;
         if (_lastActive.TryGetValue(workspace, out IntPtr last) && IsWindow(last) && IsOnScreen(last)
@@ -659,6 +680,8 @@ internal sealed partial class WorkspaceManager : IDisposable
             ForceForeground(target);
             _lastActive[workspace] = target;
         }
+
+        return target;
     }
 
     // Shown and not minimized: not hidden by its app (closed to the tray), and not cloaked by the shell —

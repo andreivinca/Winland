@@ -230,8 +230,10 @@ Z-order predecessors; not minimized per its window placement.
 ### 7.5 The Mouse Follows Focus
 - After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here` and `movetoworkspace`, if the
   foreground window or its visible frame changed and the cursor isn't over it, move the cursor to the
-  centre of its frame (`CursorWarp`). Workspace switches, the scratchpad and release never move the
-  cursor.
+  centre of its frame (`CursorWarp`).
+- After showing a workspace (`workspace`, `scratchpad` on/off), move the cursor to the centre of the
+  window focused there unless it is over it already; with nothing focused, to the centre of that
+  workspace's monitor unless it is on that monitor already. `workspace-release` never moves the cursor.
 
 ## 8. Config and Shortcut Requirements (`winland-keys`)
 
