@@ -247,10 +247,9 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         SetShown(home, k); // remember across sleep; ensure no other monitor still claims k
 
-        // Lay out k's strip on its home monitor, scrolled to its focused tile, and bring back its floating
-        // windows where they were left. Then focus it, and put the mouse on it.
-        ShowWorkspace(k, home);
-        BringCursorTo(FocusWorkspace(k), home);
+        // Lay out k's strip on its home monitor, scrolled to its focused tile, bring back its floating
+        // windows where they were left, focus it — and put the mouse on it.
+        BringCursorTo(ShowWorkspace(k, home), home);
         GuardEvents();
 
         LogWorkspaces(already ? $"reclaim WS{k}" : $"switch WS{k}");
@@ -478,8 +477,7 @@ internal sealed partial class WorkspaceManager : IDisposable
             return IntPtr.Zero;
         }
 
-        ShowWorkspace(workspace, monitor);
-        return FocusWorkspace(workspace);
+        return ShowWorkspace(workspace, monitor);
     }
 
     /// <summary>

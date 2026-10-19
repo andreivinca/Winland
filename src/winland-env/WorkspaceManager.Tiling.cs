@@ -307,11 +307,12 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
-    /// Bring a workspace's windows onto the screen: its strip laid out on <paramref name="monitor"/>, and its
-    /// floating windows back where the user left them — on whichever monitor that is. (The scratchpad roams,
-    /// so its floating windows come along to its monitor instead.)
+    /// Bring a workspace's windows onto the screen and land focus there: its strip laid out on
+    /// <paramref name="monitor"/>, its floating windows back where the user left them — on whichever monitor
+    /// that is — and raised above the tiles. (The scratchpad roams, so its floating windows come along to
+    /// its monitor instead.) Returns the window it focused, or Zero.
     /// </summary>
-    private void ShowWorkspace(int workspace, MonitorState monitor)
+    private IntPtr ShowWorkspace(int workspace, MonitorState monitor)
     {
         LayoutWorkspace(workspace, monitor, FocusTargetOf(workspace));
 
@@ -332,6 +333,47 @@ internal sealed partial class WorkspaceManager
                 RestoreInPlace(hWnd);
             }
         }
+
+        // Focus first: focusing raises the focused window, which would cover a floating one again.
+        IntPtr focused = FocusWorkspace(workspace);
+        RaiseFloating(workspace);
+        return focused;
+    }
+
+    /// <summary>
+    /// Floating windows stand above the tiles. Restored without being activated, a floating window comes
+    /// back at its old place in the Z order — often under the tiles of the monitor it sits on, invisible.
+    /// Raise the workspace's floating windows on screen to the top, keeping their order among themselves,
+    /// without focusing any of them.
+    /// </summary>
+    private void RaiseFloating(int workspace)
+    {
+        var floating = new List<IntPtr>();
+        EnumWindows((h, _) =>
+        {
+            if (_floating.Contains(h) && _windowWorkspace.TryGetValue(h, out int owner) && owner == workspace
+                && IsOnScreen(h) && !IsHungAppWindow(h))
+            {
+                floating.Add(h);
+            }
+
+            return true;
+        }, IntPtr.Zero);
+
+        if (floating.Count == 0)
+        {
+            return;
+        }
+
+        // EnumWindows runs top to bottom: raise from the bottom up, so the topmost one ends on top again.
+        // Windows ignores HWND_TOP for another process's window unless the caller may set the foreground.
+        WithForegroundLockLifted(() =>
+        {
+            for (int i = floating.Count - 1; i >= 0; i--)
+            {
+                SetWindowPos(floating[i], HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        });
     }
 
     /// <summary>
@@ -712,6 +754,9 @@ internal sealed partial class WorkspaceManager
 
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOOWNERZORDER = 0x0200;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private static readonly IntPtr HWND_TOP = IntPtr.Zero;
 
     private const uint MONITOR_DEFAULTTOPRIMARY = 1;
     private const int MDT_EFFECTIVE_DPI = 0;

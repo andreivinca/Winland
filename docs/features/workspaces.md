@@ -96,7 +96,9 @@ shell cloaks rather than hides them when they close, so a linked one would keep 
    monitors (`PutAwayWorkspace`).
 5. Record k as shown and bring k's windows back (`ShowWorkspace`): its strip laid out on the home
    monitor scrolled to its focused tile, its floating windows restored where the user left them — on
-   any monitor. Then focus k's last-active window. On a re-press of an already-shown workspace this
+   any monitor. Then focus k's last-active window, and raise k's floating windows above the tiles (they
+   come back unactivated, at their old Z position — otherwise behind the tiles of the monitor they sit
+   on). On a re-press of an already-shown workspace this
    *re-asserts* the workspace: minimized or maximized tiles snap back into their columns, and minimized
    floating windows come back in place.
 6. A ~1.5 s event guard brackets the operation so our own minimize/restore events don't feed back

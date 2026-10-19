@@ -63,10 +63,13 @@ their place in the order but take no column.
 | `focus left\|right` | On a tile: focus the neighbouring tile and scroll it into view. Past either end of the strip, on any other window, or for `up`/`down`: geometric `FocusNearest` (see `window-focus.md`). |
 | `move-window left\|right` | On a tile: trade places with the neighbour (`TileOrder.MoveTo`). At the end of the strip: join the workspace shown on the adjacent monitor in that direction, entering at the near end (no-op if it shows none). On any other window: `MoveWindowToMonitor` to the adjacent monitor, membership unchanged. |
 
-Showing a workspace (`ShowWorkspace`) lays out its strip and restores its minimized floating windows in
-place, on whatever monitor they are (`RestoreInPlace`, maximized again if they were); the scratchpad
-roams, so its floating windows are moved to its monitor instead. Putting a workspace away
-(`PutAwayWorkspace`) minimizes all its windows, wherever they are.
+Showing a workspace (`ShowWorkspace`) lays out its strip, restores its minimized floating windows in
+place, on whatever monitor they are (`RestoreInPlace`, maximized again if they were), focuses it, and
+then raises its floating windows above everything (`RaiseFloating`: `HWND_TOP` with the foreground lock
+lifted, no activation, their order kept). Restored without activation, a floating window would otherwise
+return at its old Z position — under the tiles of the monitor it sits on. The scratchpad roams, so its
+floating windows are moved to its monitor instead. Putting a workspace away (`PutAwayWorkspace`)
+minimizes all its windows, wherever they are.
 
 The viewport always keeps the workspace's focused tile (`_lastActive`) in view: every layout reveals it
 unless a command reveals another tile.

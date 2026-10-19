@@ -49,7 +49,8 @@ at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-lo
   come back with any workspace. Windows that are open when Winland starts are all normal windows.
 - **Drag a tile** (or resize it) with the mouse and it leaves the row and **floats** right where you put
   it — Windows handles it from then on — but it stays in its workspace: it's put away and brought back
-  with it, exactly where you left it, even on another monitor. `Win+Space` puts it back in the row.
+  with it, exactly where you left it and in front of the tiles, even on another monitor. `Win+Space`
+  puts it back in the row.
 - There's also a **scratchpad** (`Win+S`): a workspace with no home monitor that pops up on whatever
   monitor your mouse is on, and disappears again on the next press.
 
