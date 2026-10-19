@@ -55,7 +55,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // The scratchpad is a special roaming workspace: it has no home monitor and always shows on the
     // monitor under the mouse. It is a normal membership tag in _windowWorkspace (so windows attach to it
     // via link/move like any workspace), reserved at a value no real workspace will reach.
-    public const int ScratchpadWorkspace = int.MaxValue;
+    public const int ScratchpadWorkspace = Ipc.ScratchpadWorkspace;
     // While the scratchpad is shown, the workspace its monitor was showing beforehand — restored when the
     // scratchpad is toggled off or relocated away. 0 means "the monitor was showing nothing".
     private int _scratchpadReturn;

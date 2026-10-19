@@ -12,7 +12,7 @@ one app, **`winland`**, which runs two companion processes and ends them when it
   bound to each Super (Win) combo.
 - **`winland-indicator`** — companion: the on-screen workspace circles, one per monitor. Runs unelevated
   and subscribes to `winland`'s broadcast event pipe; its one command back is moving a workspace to
-  another monitor when a circle is dropped there.
+  another monitor when a circle is dragged onto it.
 - **`winlandctl`** — a one-shot CLI that forwards a single command to `winland` over its pipe.
 
 Current core capabilities:
@@ -85,8 +85,9 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
   scratchpad, "–" for none/unknown), updated live from `winland`'s event pipe.
 - Left-drag slides the circle **along** the work-area edge it is docked to; coming near another edge
   re-docks it there. It never takes focus.
-- Dragged off its monitor, a circle showing a number carries its workspace: dropped on another monitor,
-  the whole workspace moves there and the old monitor goes back to the workspace it showed before.
+- Dragged onto another monitor, a circle showing a number carries its workspace: the moment the mouse
+  enters that monitor, the whole workspace moves there and the old monitor goes back to the workspace
+  it showed before — live, while the button is still down, so it can be carried back.
 - The dock edge and position are remembered per monitor across restarts.
 - See `docs/features/workspace-indicator.md`.
 
@@ -150,7 +151,8 @@ src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          companion: hotkey da
                       Config.cs, HotkeyConfig.cs,
                       AppLauncher.cs, WindowsHotkeyDisabler.cs
 src/winland-indicator/ IndicatorApp.cs, IndicatorWindow.cs, companion: workspace circles (unelevated)
-                      EventClient.cs, UiPoster.cs, DockState.cs
+                      EventClient.cs, UiPoster.cs, DockState.cs,
+                      WorkspaceDrag.cs, LatestRequestSender.cs
 src/winlandctl/       Program.cs                            control CLI (one-shot)
 ```
 

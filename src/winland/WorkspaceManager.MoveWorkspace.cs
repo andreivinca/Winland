@@ -4,10 +4,11 @@ using System.Linq;
 namespace Winland;
 
 /// <summary>
-/// Moving a workspace to another monitor — what dropping a monitor's indicator circle onto another monitor
-/// asks for ("move-workspace"). The workspace is re-homed there and shown there with everything in it, and
-/// the monitor it left goes back to the workspace it showed before. Membership is untouched: the same
-/// windows belong to the same workspaces; only where the workspace lives changes.
+/// Moving a workspace to another monitor — what dragging a monitor's indicator circle onto another monitor
+/// asks for ("move-workspace"), the moment the cursor enters it. The workspace is re-homed there and shown
+/// there with everything in it, and the monitor it left goes back to the workspace it showed before.
+/// Membership is untouched: the same windows belong to the same workspaces; only where the workspace lives
+/// changes.
 /// </summary>
 internal sealed partial class WorkspaceManager
 {
@@ -19,7 +20,8 @@ internal sealed partial class WorkspaceManager
     ///    user put on any other monitor stay where they are;
     ///  * the monitor it leaves goes back to the workspace it showed before (<see cref="PreviousWorkspace"/>),
     ///    or shows nothing when it has no other;
-    ///  * focus — and the mouse — end on the moved workspace.
+    ///  * focus ends on the moved workspace. The mouse is left alone: this is a mouse gesture, and the drag
+    ///    that asked for it is still under way — the user may carry the workspace on, or back.
     /// A workspace no monitor shows is simply re-homed and shown there. Returns false when the workspace is
     /// not a numbered one or no monitor <paramref name="device"/> is attached.
     /// </summary>
@@ -57,7 +59,7 @@ internal sealed partial class WorkspaceManager
 
         // The target puts away what it showed and lays the workspace's tiles out — which takes them off the
         // monitor it leaves, so that one can then go back to its previous workspace without touching them.
-        IntPtr focused = RenderWorkspaceOn(target, workspace);
+        RenderWorkspaceOn(target, workspace);
         if (source != null)
         {
             RenderWorkspaceOn(source, previous);
@@ -68,10 +70,9 @@ internal sealed partial class WorkspaceManager
                 LayoutWorkspace(workspace, target, FocusTargetOf(workspace));
             }
 
-            focused = FocusAndRaise(workspace); // showing the previous workspace took focus; hand it back
+            FocusAndRaise(workspace); // showing the previous workspace took focus; hand it back
         }
 
-        BringCursorTo(focused, target);
         GuardEvents();
 
         LogWorkspaces($"move WS{workspace} to {target.Device}");

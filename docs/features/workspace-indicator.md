@@ -8,7 +8,7 @@ monitor's taskbar.
 
 The indicator is its own process, `winland-indicator`. It is mostly a **subscriber**: it reads
 workspace state off `winland`'s broadcast event pipe and draws. Its one command back is a request
-to **move a workspace to another monitor** when the user drops a circle there (§4). It holds no
+to **move a workspace to another monitor** when the user drags a circle onto it (§4). It holds no
 window handles and needs no elevation. Winland works exactly as before without it.
 
 ## 2. What the User Sees
@@ -49,28 +49,53 @@ Concretely, on each mouse-move during a drag:
    fully inside the work area.
 
 Because the docked position is always derived from the monitor's own work area and clamped to it,
-**docking never puts a circle on another monitor** — and because the window carries
-`WS_EX_NOACTIVATE`, dragging it never takes focus from the app the user is working in.
-
-The one way off the monitor is carrying a workspace (§4): while the cursor is **outside the circle's
-own monitor** (its full bounds, not just the work area — the taskbar still counts as home), a circle
-that shows a numbered workspace leaves its edge and follows the cursor, drawn more opaque (~63%) so it
-reads as picked up. Back over its own monitor it docks again by the rule above.
+**a circle never leaves its own monitor** — and because the window carries `WS_EX_NOACTIVATE`, dragging
+it never takes focus from the app the user is working in.
 
 ## 4. Moving a Workspace to Another Monitor
 
-Dropping a circle on another monitor moves that **whole workspace** there.
+Dragging a circle that shows a number onto another monitor moves that **whole workspace** there —
+**live, the moment the cursor enters that monitor**, not on release. The rules are in `WorkspaceDrag`
+(pure, unit-tested in `tests/winland-indicator.Tests`); `IndicatorApp` applies them.
 
-| Drag ends… | Result |
-| --- | --- |
-| on the circle's own monitor | an ordinary re-dock; the new position is persisted (§5) |
-| on another monitor, circle shows a number | `move-workspace <n> <device>` is sent; the circle returns to where it was picked up |
-| because capture was lost (not a button release) | nothing is sent; the circle returns to where it was picked up |
+**Which circle a drag moves.** The circle that was pressed keeps the mouse (capture) for the whole
+drag, but the circle the drag *moves* — the **carrier** — is the circle of the monitor under the
+cursor, docked there by the rule of §3. So the dragged badge seems to jump monitors while every window
+stays on its own monitor.
 
-The `–` circle has nothing to carry and the `S` circle's scratchpad already roams with `Win+S`, so
-neither ever leaves its monitor.
+**Entering another monitor** (with a workspace in hand) does, in one step:
 
-What `winland` does (`WorkspaceManager.MoveWorkspaceToMonitor`; details in `workspaces.md` §7a):
+1. That monitor's circle becomes the carrier: it docks at the cursor and shows the dragged workspace.
+   Its old glyph is gone in that same frame.
+2. `move-workspace <n> <device>` is sent at once.
+3. The circle the drag came from goes back to where it was when the drag began and **shows nothing**
+   until the snapshot that follows the move arrives (§6). Then it shows that monitor's previous
+   workspace, or `–`.
+
+The drag goes on: keep sliding along the new monitor's edges, or carry the workspace back. Re-entering
+the first monitor moves the workspace back the same way, live.
+
+**Never on two circles.** While a drag carrying workspace *n* is in effect, the carrier shows *n*, and
+any other circle that the latest snapshot still credits with *n* is hidden (fully transparent, so also
+click-through). Circles that hide are redrawn before those that appear, so *n* never shows twice, not
+even for a frame.
+
+**Release** only ends the drag: the carrier stays docked where it was let go, and every circle's dock
+is saved (§5). The rule above stays in effect until a snapshot shows *n* on the carrier's monitor, or
+3 s have passed (`SettleTimeoutMs`: Winland isn't running, or refused the move). Then the circles show
+plain snapshots again. A lost capture ends the drag the same way, because every move it asked for has
+already happened.
+
+The `–` circle has nothing to carry and the `S` circle's scratchpad already roams with `Win+S`. A drag
+of either stays with its own circle and moves nothing.
+
+**Requests** leave in order on a worker thread (`LatestRequestSender`, through `WinlandClient`: 2 s to
+connect, 10 s for the reply), so the circles never wait on Winland. A request still waiting when a
+newer one is made is dropped in its favour: dragged back and forth quickly, only where the workspace
+ends up matters, and an older move arriving late would undo a newer one. A failed request is logged.
+
+What `winland` does for each move (`WorkspaceManager.MoveWorkspaceToMonitor`; details in
+`workspaces.md` §7a):
 
 1. **Re-home** the workspace to the target monitor — `Win+N` shows it there from now on.
 2. Its floating windows on the old monitor are **carried** to the target, at the same place relative
@@ -80,21 +105,12 @@ What `winland` does (`WorkspaceManager.MoveWorkspaceToMonitor`; details in `work
 4. The old monitor **goes back to the workspace it showed before**: of the workspaces homed on it that
    no monitor is showing, the most recently shown (`PreviousWorkspace`) — or nothing (`–`) when there
    is none.
-5. Focus, and the mouse, land on the moved workspace.
+5. Focus lands on the moved workspace. The **mouse is left alone** — it is in the user's hand, mid-drag.
 
-Example: monitor 1 shows `3`, monitor 2 shows `5`. Drop monitor 1's circle on monitor 2 → monitor 2
-shows `3` with all its windows (5 is put away, still homed on monitor 2), and monitor 1 shows the
-workspace it showed before 3.
-
-The circles never update themselves optimistically. Both relabel when the snapshot that follows the
-move arrives (§6), so they can never disagree with what Winland did. The request runs on a
-worker thread (`WinlandClient`, 2 s to connect, 10 s for the reply): the move minimizes and lays out
-windows, and the circles must stay responsive meanwhile. A request that fails — Winland is
-not running, or the monitor vanished — is logged and changes nothing.
-
-**DPI:** a carried circle keeps its own monitor's size. Moving it onto a monitor with a different DPI
-makes Windows send `WM_DPICHANGED` with a suggested new window rectangle; `IndicatorWindow` declines it
-(all of its geometry comes from `Redraw`), so the rescale can't fight the layered-window surface.
+Example: monitor 1 shows `3`, monitor 2 shows `5`. Drag monitor 1's circle across → as the cursor
+crosses into monitor 2, monitor 2's circle shows `3` under the cursor, monitor 1's circle vanishes,
+monitor 2 switches to workspace 3 with all its windows (5 is put away, still homed on monitor 2), and
+monitor 1 switches to the workspace it showed before 3 — its circle reappearing with that number.
 
 ## 5. Persistence
 
@@ -110,8 +126,8 @@ log), `winland-indicator-dock.txt`:
 - Keyed by the **stable GDI device name**, so a monitor keeps its position across handle reissue.
 - The position along the edge is a **fraction**, not a pixel coordinate, so a resolution, DPI or
   taskbar change keeps the circle where the user put it instead of drifting or landing off-screen.
-- Written when a drag ends **on the circle's own monitor**; a carry (§4) leaves it untouched. Read at
-  startup. The default is `Top 0.8` (top edge, toward the
+- Written when a drag is released — every circle's dock, so a drag that ended on another monitor
+  keeps its circle there. Read at startup. The default is `Top 0.8` (top edge, toward the
   right).
 - Monitors that are not attached right now keep their remembered entry, so unplugging a screen never
   forgets where its circle lived. A missing or unreadable file is not an error — everything falls back
@@ -149,11 +165,11 @@ log), `winland-indicator-dock.txt`:
 - Monitors are enumerated with `EnumDisplayMonitors` + `GetMonitorInfo` (MONITORINFOEX) rather than
   WinForms' `Screen`, so the device names are exactly the ones `winland` keys its state on, and
   the **work area** (`rcWork`) is used so a circle never lands under the taskbar. The full monitor
-  rectangle (`rcMonitor`) decides whether a drag is still over the circle's own monitor, and which
-  monitor a carried circle was dropped on.
+  rectangle (`rcMonitor`) decides which monitor a drag is over, and so which circle carries it.
 - `SystemEvents.DisplaySettingsChanged` re-syncs the window set on the UI thread: windows for
   vanished monitors are disposed, surviving ones adopt the new work area/DPI (keeping their edge and
-  offset), and new monitors get a window at their remembered dock position.
+  offset), and new monitors get a window at their remembered dock position. A monitor coming or going
+  mid-drag drops the drag's rules (the circles go back to plain snapshots).
 
 ## 8. Why It Is Invisible to Window Management
 
@@ -181,11 +197,17 @@ UI-thread heartbeat covers the stretches where nothing is redrawn.
   back and a workspace change republishes.
 - **The workspace count is not tracked** — the indicator shows what each monitor displays, nothing
   about workspaces on other monitors or how many exist.
-- **No keyboard interaction**; the circle is drag-only by design (it must never take focus) — so a
-  carry cannot be cancelled with `Esc`; drop it back on its own monitor instead.
-- **A carry acts on what the circle shows.** If Winland changes that monitor's workspace in the
-  instant between the drop and the request (e.g. a shortcut pressed mid-drag), the workspace the circle
-  showed is the one moved.
+- **No keyboard interaction**; the circle is drag-only by design (it must never take focus). There is
+  no cancel: a move happens as the cursor enters a monitor, so carry the workspace back to undo it.
+- **Every crossing is a full move.** Each one puts windows away and lays them out again; brushing
+  across a monitor edge moves the workspace there and back. Waiting requests are coalesced (§4), the
+  one already being carried out is not.
+- **The drag relies on keeping the mouse while Winland switches focus.** Each move activates a window
+  of the moved workspace mid-drag. A circle is never the foreground window, and with the button held its
+  capture is expected to survive that — if Windows ever takes it, the drag simply ends where it is.
+- **A carry acts on what the circle shows.** If Winland changes that monitor's workspace while the
+  button is down (e.g. a shortcut pressed mid-drag), the workspace the circle showed at the press is the
+  one moved.
 - **The scratchpad can't be carried**; `Win+S` on the other monitor brings it there.
 
 ## 11. Extension Guidance
@@ -194,8 +216,9 @@ UI-thread heartbeat covers the stretches where nothing is redrawn.
   message `IndicatorWindow` cares about is handled in one `WndProc`, so a `WM_RBUTTONUP` case that
   shows a `ContextMenuStrip` is the whole change.
 - Keep `IndicatorWindow` free of any knowledge of the pipes, and `EventClient` / `WinlandClient` free of
-  any knowledge of windows — `IndicatorApp` is the only place they meet. A circle reports a drop
-  (`WorkspaceDropped`); the app decides what to ask Winland.
+  any knowledge of windows — `IndicatorApp` is the only place they meet. A circle reports the gesture
+  (`DragStarted` / `DragMoved` / `DragEnded`) and draws what it is told (`ShowBadge`); the rules of a
+  drag live in `WorkspaceDrag`, free of windows, so they stay unit-testable.
 - Any further request belongs on the control pipe as a `Dispatcher` verb, never on the event pipe.
 - If the protocol grows a field, extend the line grammar in `Ipc`'s remarks and in
   `EventServer.FormatSnapshot`; `EventClient.Parse` already skips pairs it cannot read rather than

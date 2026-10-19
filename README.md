@@ -105,11 +105,11 @@ ends up in view and focused — if the target lives on a different monitor, the 
 shortcuts) or moves the focused one (`Win`+`Shift`+arrows, `Win`+`Space`, `Win`+`Shift`+`N`), the
 cursor jumps to the middle of that window — unless it is already over it. So the next click, scroll, or
 "focus follows mouse" hover lands on the window you just moved to. Switching to a workspace
-(`Win`+`N`, `Win`+`S`, or dropping its indicator circle on another monitor) does the same with the
-window it focuses there; an empty workspace brings the
+(`Win`+`N`, `Win`+`S`) does the same with the window it focuses there; an empty workspace brings the
 mouse to the middle of its monitor instead, so an app you launch next opens there. (The mouse's monitor
 is also where a never-used workspace or the scratchpad opens, so after a switch that is the monitor
-you switched on.)
+you switched on.) Moving a workspace by dragging its indicator circle leaves the mouse alone — it's in
+your hand.
 
 How the row is laid out:
 
@@ -281,20 +281,25 @@ new state and each circle redraws.
 - Bring the mouse **near another edge** and the circle **re-docks** there, then slides along that one.
 - It never steals focus from the app you're working in.
 
-**Drag a workspace to another monitor.** Pull a circle showing a number off its monitor and it comes
-with the mouse; drop it anywhere on another monitor and that **whole workspace moves there**:
+**Drag a workspace to another monitor.** Drag a circle showing a number onto another monitor, and the
+**moment the mouse enters it, the whole workspace moves there** — you don't have to let go:
 
-- Its tiles are laid out on the new monitor, and its floating windows on the old monitor come along.
-- The new monitor shows the moved workspace and puts away what it was showing (that workspace stays
-  homed there, ready for `Win`+`N`).
+- The new monitor's circle jumps to your mouse showing the workspace you're dragging, and the old
+  circle disappears in the same instant — a workspace is never on two circles.
+- The new monitor shows the moved workspace, with its tiles laid out and its floating windows from the
+  old monitor brought along. It puts away what it was showing (that workspace stays homed there,
+  ready for `Win`+`N`).
 - The old monitor goes back to **the workspace it showed before** — or shows nothing (`–`) when it
-  has no other.
-- The workspace now lives on the new monitor: `Win`+`N` shows it there from now on.
+  has no other — and its circle reappears with that.
+- Keep holding the button and you're still dragging: slide the circle along the new monitor's edges,
+  or carry the workspace **back** to the first monitor, which moves it back just as live.
+- Let go and the circle stays where you dropped it. The workspace now lives on that monitor: `Win`+`N`
+  shows it there from now on.
 
-For example, with `3` on monitor 1 and `5` on monitor 2, drop monitor 1's `3` on monitor 2: monitor 2
-now shows workspace 3 with all its windows, and monitor 1 shows whatever it showed before 3. Let go
-back on the circle's own monitor and it just re-docks there, as above. The `–` and `S` circles have
-nothing to carry and stay on their monitor.
+For example, with `3` on monitor 1 and `5` on monitor 2, drag monitor 1's `3` across: as the mouse
+crosses into monitor 2, monitor 2 switches to workspace 3 with all its windows (its `5` circle becomes
+the `3` under your mouse), and monitor 1 switches to whatever it showed before 3. The `–` and `S`
+circles have nothing to carry and stay on their monitor.
 
 Where you park each circle is remembered between runs (in `winland-indicator-dock.txt`, next to the
 exe, per monitor).
@@ -314,7 +319,7 @@ and ends them when it exits. Plus a CLI any tool can call:
 | --- | --- | --- |
 | **`winland.exe`** | The main app: the "window manager" (per-monitor workspaces, tiling, directional focus) and the tray icon, driven entirely over a control pipe. Starts the two companions below and ends them when it exits. Elevated. | ❌ none |
 | **`winland-keys.exe`** | Companion: the hotkey daemon. Owns one global low-level keyboard hook; on each Super (Win) combo it runs that combo's configured command. Runs with Winland's (elevated) rights. | ✅ the only one |
-| **`winland-indicator.exe`** | Companion: the per-monitor workspace circles. Subscribes to Winland's broadcast event pipe and draws; its one request back is moving a workspace when you drop a circle on another monitor. Runs **unelevated**. | ❌ none |
+| **`winland-indicator.exe`** | Companion: the per-monitor workspace circles. Subscribes to Winland's broadcast event pipe and draws; its one request back is moving a workspace when you drag a circle onto another monitor. Runs **unelevated**. | ❌ none |
 | **`winlandctl.exe`** | Tiny CLI that forwards one command to Winland over a named pipe and exits. | ❌ none |
 
 The flow that ties them together:
@@ -368,7 +373,7 @@ From the repo root, with the .NET 10 SDK:
 
 ```powershell
 dotnet build Winland.slnx -c Debug
-dotnet test Winland.slnx          # unit tests (tiling layout and order)
+dotnet test Winland.slnx          # unit tests (tiling layout and order, indicator drag rules)
 ```
 
 Building `winland` also builds its companions and puts them — with `winlandctl.exe`, `config.conf` and
@@ -430,12 +435,15 @@ src/
     launch-or-focus.ps1 / launch-web.ps1 / launch-or-focus-web.ps1 / show-desktop.ps1
   winland-indicator/                      companion: per-monitor on-screen workspace circles (unelevated)
     IndicatorApp.cs                       one window per monitor, display changes, dock persistence, workspace moves
-    IndicatorWindow.cs                    one circle: layered rendering + drag/dock/carry behavior
+    IndicatorWindow.cs                    one circle: layered rendering, docking, reporting drags
+    WorkspaceDrag.cs                      the rules of a drag that carries a workspace across monitors (pure, unit-tested)
+    LatestRequestSender.cs                send move requests in order, newest wins (unit-tested)
     EventClient.cs / UiPoster.cs          subscribe to winland's events, hand them to the UI thread
   winlandctl/                             one-shot control CLI (sends one command over the pipe)
 
 tests/
   winland.Tests/                          unit tests for the tiling layout, tile order, mouse moves and workspace fallback (MSTest)
+  winland-indicator.Tests/                unit tests for the indicator's drag rules and request order (MSTest)
 
 packaging/                                install-autostart.ps1 (tracked source, copied into dist)
 dist/                                     assembled output (gitignored): all exes + config + scripts

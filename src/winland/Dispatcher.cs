@@ -47,7 +47,7 @@ internal sealed class Dispatcher
                 return $"{Ipc.ErrPrefix} movetoworkspace expects a whole number >= 1";
 
             case "move-workspace":
-                // "<workspace> <monitor device>" — sent by the indicator when a circle is dropped on another
+                // "<workspace> <monitor device>" — sent by the indicator when a dragged circle enters another
                 // monitor. Device names never contain a space.
                 string[] parts = args.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 if (parts.Length == 2 && TryParseWorkspace(parts[0], out int moved))

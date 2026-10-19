@@ -8,7 +8,7 @@ namespace Winland.Common;
 /// Best-effort client for winland's control pipe (<see cref="Ipc.PipeName"/>), for the requests a
 /// Winland process makes itself rather than through a winlandctl process (which would add a process start
 /// each time): the keys daemon's "place-next-window" before a launch, and the indicator's
-/// "move-workspace" when a circle is dropped on another monitor. Each caller picks timeouts to suit how
+/// "move-workspace" when a dragged circle enters another monitor. Each caller picks timeouts to suit how
 /// long it can afford to wait. It never throws.
 /// </summary>
 public sealed class WinlandClient

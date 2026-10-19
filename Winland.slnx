@@ -8,5 +8,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/winland.Tests/winland.Tests.csproj" />
+    <Project Path="tests/winland-indicator.Tests/winland-indicator.Tests.csproj" />
   </Folder>
 </Solution>

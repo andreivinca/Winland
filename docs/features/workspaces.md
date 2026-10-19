@@ -121,9 +121,10 @@ never has a home to unpin).
 
 ## 7a. Moving a Workspace to Another Monitor (`move-workspace <n> <device>`)
 
-Sent by the on-screen indicator when the user drops a monitor's circle on another monitor (see
-`workspace-indicator.md` §4); also reachable as `winlandctl move-workspace 3 \\.\DISPLAY2`.
-`MoveWorkspaceToMonitor(n, device)` (`WorkspaceManager.MoveWorkspace.cs`):
+Sent by the on-screen indicator the moment a dragged circle enters another monitor — and again each
+time the drag crosses into another one (see `workspace-indicator.md` §4); also reachable as
+`winlandctl move-workspace 3 \\.\DISPLAY2`. `MoveWorkspaceToMonitor(n, device)`
+(`WorkspaceManager.MoveWorkspace.cs`):
 
 1. `RefreshMonitors()`; find the target by device name (case-insensitive). No such monitor attached →
    `ERR`. Already shown there → nothing to do.
@@ -142,8 +143,9 @@ Sent by the on-screen indicator when the user drops a monitor's circle on anothe
    there.
 6. If the two monitors differ in DPI, lay `n` out once more: a window arriving on a monitor of another
    DPI rescales itself to Windows' suggested size, overriding its column.
-7. Focus `n` again and raise its floating windows (`FocusAndRaise` — step 5 focused `previous`), then
-   bring the mouse to the focused window (or the target's centre if `n` is empty).
+7. Focus `n` again and raise its floating windows (`FocusAndRaise` — step 5 focused `previous`). The
+   mouse is **not** moved: unlike the keyboard commands, this is a mouse gesture, and the drag that
+   sent it is usually still under way.
 
 A workspace that no live monitor shows is just re-homed and shown on the target (steps 3–7 without a
 source). Membership never changes; the outgoing workspace of the target keeps its home there. The

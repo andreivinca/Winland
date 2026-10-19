@@ -31,6 +31,12 @@ public static class Ipc
     /// </summary>
     public const string EventsPipeName = "winland-events";
 
+    /// <summary>
+    /// The roaming scratchpad's workspace id, as it appears on the event pipe and in commands. Real
+    /// workspaces are whole numbers from 1 and never reach it.
+    /// </summary>
+    public const int ScratchpadWorkspace = int.MaxValue;
+
     public const string Ok = "OK";
     public const string ErrPrefix = "ERR";
 }

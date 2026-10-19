@@ -13,7 +13,7 @@ plus a control CLI. Together they provide four feature groups:
 | --- | --- | --- |
 | **`winland`** | The main app, the one the user starts: the "window manager" (workspaces, tiling, directional focus) and the tray presence. No keyboard hook — driven over a named pipe. Starts and ends the two companions (`Companions`). | elevated |
 | **`winland-keys`** | Companion. Global Super (Win) keyboard hook. Maps each combo to a command line and runs it. No workspace/focus logic. | Winland's (elevated) |
-| **`winland-indicator`** | Companion. One translucent workspace circle per monitor. Subscribes to `winland`'s broadcast event pipe; its one command back is `move-workspace` when a circle is dropped on another monitor. | the user's (unelevated) |
+| **`winland-indicator`** | Companion. One translucent workspace circle per monitor. Subscribes to `winland`'s broadcast event pipe; its one command back is `move-workspace` when a dragged circle enters another monitor. | the user's (unelevated) |
 | **`winlandctl`** | One-shot CLI: forwards a single command to `winland` over the pipe and reports the result. | inherits its caller |
 
 They share **`Winland.Common`** (the pipe protocol constants in `Ipc.cs`, the append-only logger in
@@ -160,8 +160,8 @@ It has **no keyboard hook**: every action originates from the pipe.
   - `movetoworkspace <n>` → `WorkspaceManager.MoveFocusedWindowToWorkspace`
   - `move-workspace <n> <device>` → `WorkspaceManager.MoveWorkspaceToMonitor` (re-home workspace n to
     that monitor and show it there with its windows; the monitor it left goes back to the workspace it
-    showed before — see `features/workspaces.md` §7a). Sent by the indicator when a circle is dropped on
-    another monitor; `ERR` when no such monitor is attached.
+    showed before — see `features/workspaces.md` §7a; never moves the cursor). Sent by the indicator the
+    moment a dragged circle enters another monitor; `ERR` when no such monitor is attached.
   - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace` (tile it)
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
   - `toggle-float` → `WorkspaceManager.ToggleFloating` (pop a tile out of its strip, or put a floating
@@ -211,12 +211,14 @@ It has **no keyboard hook**: every action originates from the pipe.
   (per-monitor-v2 DPI), runs `IndicatorApp`.
 - `IndicatorApp` — enumerates monitors with Win32 (so device names match `winland`'s
   `\\.\DISPLAYn`) and keeps one `IndicatorWindow` per monitor in step with
-  `SystemEvents.DisplaySettingsChanged`; loads/saves dock positions; applies each snapshot; and turns a
-  circle dropped on another monitor into a `move-workspace` request, sent on a worker thread through
-  `WinlandClient`. It is the only place the pipes and the windows meet.
+  `SystemEvents.DisplaySettingsChanged`; loads/saves dock positions; applies each snapshot; and runs
+  drags: it applies `WorkspaceDrag`'s rules (which circle carries the drag, which glyph shows where) and
+  sends `move-workspace` the moment a dragged workspace enters another monitor, through
+  `LatestRequestSender` (in order, newest wins, on a worker thread). It is the only place the pipes and
+  the windows meet.
 - `IndicatorWindow` — one monitor's circle: a layered window (`WS_EX_LAYERED`) painted with
-  `UpdateLayeredWindow` from a 32bpp ARGB bitmap, plus the drag/dock behavior and carrying a workspace
-  across monitors (`WorkspaceDropped`). Empty title +
+  `UpdateLayeredWindow` from a 32bpp ARGB bitmap. It docks on its own monitor, reports the drag
+  gesture, and draws what the app tells it (`ShowBadge`). Empty title +
   `WS_EX_TOOLWINDOW` keep it out of window management and Alt-Tab; `WS_EX_NOACTIVATE` keeps it from
   taking focus; `WS_EX_TOPMOST` keeps it visible.
 - `EventClient` — background thread that stays subscribed to the events pipe, parses snapshots, and
