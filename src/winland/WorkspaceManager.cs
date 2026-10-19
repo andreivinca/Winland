@@ -9,7 +9,8 @@ namespace Winland;
 
 /// <summary>
 /// Per-monitor workspaces. Each workspace is pinned to a "home" monitor (the monitor it was first
-/// opened on) and never moves between monitors. A monitor shows exactly one workspace at a time;
+/// opened on) and never moves between monitors on its own — only when the user moves it (see
+/// WorkspaceManager.MoveWorkspace.cs). A monitor shows exactly one workspace at a time;
 /// the windows of a workspace that is not currently shown are minimized (put away).
 ///
 /// A workspace's windows are its tiles, laid out in a scrolling strip (see WorkspaceManager.Tiling.cs).
@@ -43,6 +44,10 @@ internal sealed partial class WorkspaceManager : IDisposable
     // device name -> the workspace currently shown on that monitor. Survives the monitor temporarily
     // dropping out of enumeration (sleep/power-off), so a wake restores what it was showing instead of 0.
     private readonly Dictionary<string, int> _shownByDevice = new();
+    // workspace -> when it was last shown (a tick of _showClock; higher = more recent). A monitor whose
+    // workspace is moved away goes back to the one it showed before (see PreviousWorkspace).
+    private readonly Dictionary<int, long> _lastShown = new();
+    private long _showClock;
     // HMONITOR -> state. Rebuilt from live enumeration on every RefreshMonitors; handles are never cached
     // across a display-config change.
     private readonly Dictionary<IntPtr, MonitorState> _monitors = new();
@@ -145,15 +150,16 @@ internal sealed partial class WorkspaceManager : IDisposable
         _lastActive.Clear();
         _workspaceHome.Clear();
         _shownByDevice.Clear();
+        _lastShown.Clear();
 
         List<MonitorState> ordered = EnumerateMonitors();
         for (int i = 0; i < ordered.Count; i++)
         {
             MonitorState m = ordered[i];
-            m.Current = i + 1; // leftmost monitor = workspace 1, next = 2, ...
+            int workspace = i + 1; // leftmost monitor = workspace 1, next = 2, ...
             _monitors[m.Handle] = m;
-            _workspaceHome[m.Current] = m.Device;
-            _shownByDevice[m.Device] = m.Current;
+            _workspaceHome[workspace] = m.Device;
+            SetShown(m, workspace);
         }
 
         LogWorkspaces("startup");
@@ -290,12 +296,14 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// device name so it survives the monitor sleeping/dropping out of enumeration. A workspace shows on
     /// exactly one monitor at a time, so any other monitor that still claims this workspace is cleared —
     /// this matters when a workspace was displaced onto another monitor while its home slept and the home
-    /// then wakes (without this, both would think they show it).
+    /// then wakes (without this, both would think they show it). Also stamps the workspace as the most
+    /// recently shown one, for <see cref="PreviousWorkspace"/>.
     /// </summary>
     private void SetShown(MonitorState monitor, int workspace)
     {
         if (workspace >= 1)
         {
+            _lastShown[workspace] = ++_showClock;
             foreach (string dev in _shownByDevice
                          .Where(kv => kv.Value == workspace && kv.Key != monitor.Device)
                          .Select(kv => kv.Key).ToList())

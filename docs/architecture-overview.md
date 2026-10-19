@@ -13,11 +13,12 @@ plus a control CLI. Together they provide four feature groups:
 | --- | --- | --- |
 | **`winland`** | The main app, the one the user starts: the "window manager" (workspaces, tiling, directional focus) and the tray presence. No keyboard hook — driven over a named pipe. Starts and ends the two companions (`Companions`). | elevated |
 | **`winland-keys`** | Companion. Global Super (Win) keyboard hook. Maps each combo to a command line and runs it. No workspace/focus logic. | Winland's (elevated) |
-| **`winland-indicator`** | Companion. One translucent workspace circle per monitor. Subscribes to `winland`'s broadcast event pipe; sends nothing back. | the user's (unelevated) |
+| **`winland-indicator`** | Companion. One translucent workspace circle per monitor. Subscribes to `winland`'s broadcast event pipe; its one command back is `move-workspace` when a circle is dropped on another monitor. | the user's (unelevated) |
 | **`winlandctl`** | One-shot CLI: forwards a single command to `winland` over the pipe and reports the result. | inherits its caller |
 
 They share **`Winland.Common`** (the pipe protocol constants in `Ipc.cs`, the append-only logger in
-`Log.cs`, and `UnelevatedLauncher`, which starts a process with the user's normal token).
+`Log.cs`, `WinlandClient`, the in-process control-pipe client, and `UnelevatedLauncher`, which starts a
+process with the user's normal token).
 
 ### 1.1 Why the split
 
@@ -26,8 +27,9 @@ They share **`Winland.Common`** (the pipe protocol constants in `Ipc.cs`, the ap
   keys daemon is just the most common caller.
 - **A dumb hotkey daemon** — `winland-keys` only maps combos to commands; all behavior is behind the
   `winlandctl` verbs.
-- **Least privilege for the UI** — the indicator draws and reads only, so it runs without the
-  administrator rights it has no use for.
+- **Least privilege for the UI** — the indicator draws, reads state, and makes one window-management
+  request (moving a workspace) through the same user-ACL'd control pipe `winlandctl` uses, so it runs
+  without the administrator rights it has no use for.
 
 ### 1.2 One app to start: companions
 
@@ -156,6 +158,10 @@ It has **no keyboard hook**: every action originates from the pipe.
   the protocol response:
   - `workspace <n>` (n >= 1, scratchpad id rejected) → `WorkspaceManager.SwitchFocusedMonitorTo`
   - `movetoworkspace <n>` → `WorkspaceManager.MoveFocusedWindowToWorkspace`
+  - `move-workspace <n> <device>` → `WorkspaceManager.MoveWorkspaceToMonitor` (re-home workspace n to
+    that monitor and show it there with its windows; the monitor it left goes back to the workspace it
+    showed before — see `features/workspaces.md` §7a). Sent by the indicator when a circle is dropped on
+    another monitor; `ERR` when no such monitor is attached.
   - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace` (tile it)
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
   - `toggle-float` → `WorkspaceManager.ToggleFloating` (pop a tile out of its strip, or put a floating
@@ -172,7 +178,7 @@ It has **no keyboard hook**: every action originates from the pipe.
   - `place-next-window` → `WorkspaceManager.PlaceNextWindowOnActiveMonitor` (records the monitor
     under the mouse; the first new app window within 10 s is moved there and, if resizable, tiled into
     the workspace shown there — see `WorkspaceManager.LaunchPlacement.cs`). `AppLauncher` sends it over
-    the pipe (`WinlandClient`) before a shell-command bind; `launch-or-focus.ps1` / `launch-web.ps1` send it
+    the pipe (`Winland.Common.WinlandClient`) before a shell-command bind; `launch-or-focus.ps1` / `launch-web.ps1` send it
     before launching.
   - unknown → `ERR unknown verb '<verb>'`
 
@@ -205,9 +211,12 @@ It has **no keyboard hook**: every action originates from the pipe.
   (per-monitor-v2 DPI), runs `IndicatorApp`.
 - `IndicatorApp` — enumerates monitors with Win32 (so device names match `winland`'s
   `\\.\DISPLAYn`) and keeps one `IndicatorWindow` per monitor in step with
-  `SystemEvents.DisplaySettingsChanged`; loads/saves dock positions; applies each snapshot.
+  `SystemEvents.DisplaySettingsChanged`; loads/saves dock positions; applies each snapshot; and turns a
+  circle dropped on another monitor into a `move-workspace` request, sent on a worker thread through
+  `WinlandClient`. It is the only place the pipes and the windows meet.
 - `IndicatorWindow` — one monitor's circle: a layered window (`WS_EX_LAYERED`) painted with
-  `UpdateLayeredWindow` from a 32bpp ARGB bitmap, plus the drag/dock behavior. Empty title +
+  `UpdateLayeredWindow` from a 32bpp ARGB bitmap, plus the drag/dock behavior and carrying a workspace
+  across monitors (`WorkspaceDropped`). Empty title +
   `WS_EX_TOOLWINDOW` keep it out of window management and Alt-Tab; `WS_EX_NOACTIVATE` keeps it from
   taking focus; `WS_EX_TOPMOST` keeps it visible.
 - `EventClient` — background thread that stays subscribed to the events pipe, parses snapshots, and
@@ -224,7 +233,10 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 - Line-based: the client writes one command line; the server replies with a single line — `OK`
   (`Ipc.Ok`) on success, or `ERR <message>` (`Ipc.ErrPrefix`) on failure.
 - The pipe carries an explicit ACL granting the logged-on user's processes access, elevated or not —
-  so unelevated scripts and terminals can run `winlandctl` (see §7.4).
+  so unelevated scripts and terminals can run `winlandctl`, and the unelevated indicator can request a
+  workspace move (see §7.4).
+- Clients: `winlandctl` (one process per command), and in-process `Winland.Common.WinlandClient` for the
+  keys daemon (`place-next-window`) and the indicator (`move-workspace`).
 - A connected client that never sends its line is dropped after a read timeout, so it cannot wedge
   the single-connection server.
 
@@ -251,8 +263,8 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 ### 7.2 Logging
 - Best-effort append-only log file near each executable (`winland-hooklog.txt`), via
   `Winland.Common.Log`. `winland` logs workspace transitions; `HotkeyConfig` logs ignored binds;
-  `winland-indicator` logs its monitor count at startup and each successful (re)subscription — not
-  its retries.
+  `winland-indicator` logs its monitor count at startup, each successful (re)subscription — not
+  its retries — and a `move-workspace` request that was not carried out.
 
 ### 7.3 Threading
 - Hook callback work is minimal; real actions run on the keys UI thread.
@@ -280,16 +292,17 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
    only `winland`, which owns the companions' lifetime through a kill-on-close job (§1.2).
 2. **Named-pipe control channel** — one front door (`Dispatcher`) for every Winland action.
 3. **A separate broadcast channel for state** — commands and notifications never share a pipe, so a
-   subscriber can neither issue verbs nor be mistaken for a caller awaiting a reply, and publishing
-   can never block the UI thread.
+   subscriber can neither issue verbs over the event pipe nor be mistaken for a caller awaiting a
+   reply, and publishing can never block the UI thread. (The indicator's workspace move goes over the
+   control pipe like any other command.)
 4. **Per-monitor workspace model** with **home pinning** for deterministic monitor behavior.
 5. **Dedicated hook thread** for callback responsiveness.
 6. **Command-resolution launcher** (script / sibling exe / shell) for extensible binds without
    recompiling — and the mechanism by which the keys daemon reaches `winlandctl`.
 7. **Policy-based Win hotkey suppression** (`NoWinKeys`) to avoid shell conflicts.
 8. **Elevation stops at Winland and its hook** — launched apps get the user's normal token
-   (`UnelevatedLauncher`), the pipe ACL admits unelevated `winlandctl` callers, and the indicator is
-   started unelevated.
+   (`UnelevatedLauncher`), the pipe ACL admits unelevated callers (`winlandctl`, the indicator's
+   workspace moves), and the indicator is started unelevated.
 
 ## 9. Known Architectural Constraints
 

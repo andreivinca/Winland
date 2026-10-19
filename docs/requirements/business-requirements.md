@@ -47,6 +47,8 @@ Primary users:
 - Workspace “home monitor” concept:
   - First entry pins workspace to monitor under cursor.
   - Later switches target that monitor.
+  - Dragging the workspace's indicator circle onto another monitor moves the whole workspace there
+    (re-homing it); the monitor it left goes back to the workspace it showed before.
 - A window joins a workspace only on explicit move (`Win+Shift+N`) or tile (`Win+Space`) — never as a
   side effect of interacting with it — and leaves it only on unlink (`Win+Shift+Space`), a move, or
   closing.
@@ -111,7 +113,8 @@ Primary users:
 2. **Bindings are resolved in file order** — the first matching `bind` wins. Workspace and
    window-management combos are themselves binds (commands of the form `winlandctl <verb>`), not
    reserved built-ins, so they can be rebound or removed.
-3. **Workspace switching affects only target monitor**; never alter unrelated monitors.
+3. **Workspace switching affects only target monitor**; never alter unrelated monitors. Moving a
+   workspace affects exactly the two monitors involved: the one it leaves and the one it goes to.
 4. **Released workspace can be re-homed** to a new monitor when re-entered.
 5. **No hard dependency on external services**; local desktop utility.
 

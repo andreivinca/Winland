@@ -4,8 +4,8 @@ using Winland.Common;
 namespace Winland;
 
 /// <summary>
-/// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "unlink", "toggle-float",
-/// "scratchpad",
+/// Maps a control command ("workspace 1", "movetoworkspace 1", "move-workspace 3 \\.\DISPLAY2", "link-here",
+/// "unlink", "toggle-float", "scratchpad",
 /// "workspace-release", "focus left", "move-window right", "focus-app firefox",
 /// "focus-web https://gemini.google.com", "close", "place-next-window") to the matching
 /// in-process operation. The single source of truth for what Winland can do; reached from the
@@ -45,6 +45,18 @@ internal sealed class Dispatcher
                     return Ipc.Ok;
                 }
                 return $"{Ipc.ErrPrefix} movetoworkspace expects a whole number >= 1";
+
+            case "move-workspace":
+                // "<workspace> <monitor device>" — sent by the indicator when a circle is dropped on another
+                // monitor. Device names never contain a space.
+                string[] parts = args.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length == 2 && TryParseWorkspace(parts[0], out int moved))
+                {
+                    return _workspaces.MoveWorkspaceToMonitor(moved, parts[1])
+                        ? Ipc.Ok
+                        : $"{Ipc.ErrPrefix} no monitor '{parts[1]}'";
+                }
+                return $"{Ipc.ErrPrefix} move-workspace expects a whole number >= 1 and a monitor device name";
 
             case "link-here":
                 FollowedByCursor(_workspaces.LinkFocusedWindowToCurrentWorkspace);

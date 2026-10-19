@@ -13,8 +13,9 @@ namespace Winland;
 ///
 ///  * winland-keys       the keyboard hook. Runs with Winland's own (elevated) rights, so it also sees
 ///                       keys pressed in elevated windows.
-///  * winland-indicator  the per-monitor workspace circles. Runs with the user's normal rights: it only
-///                       reads state off a pipe and draws, and a window the user drags needs no more.
+///  * winland-indicator  the per-monitor workspace circles. Runs with the user's normal rights: it reads
+///                       state off a pipe, draws, and sends one command (moving a workspace) over the
+///                       user-accessible control pipe — a window the user drags needs no more.
 ///
 /// Every running companion is in a <see cref="KillOnCloseJob"/> of its own, so it ends with Winland
 /// however Winland ends — Exit from the tray, a crash, or Task Manager. One job each, because a process

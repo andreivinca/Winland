@@ -5,7 +5,8 @@ namespace Winland.Common;
 ///
 /// The control channel (<see cref="PipeName"/>) is request/response: the client writes one command
 /// line ("workspace 1"); the server replies with a single line — <see cref="Ok"/> on success, or
-/// "<see cref="ErrPrefix"/> &lt;message&gt;" on failure. winlandctl is the client.
+/// "<see cref="ErrPrefix"/> &lt;message&gt;" on failure. winlandctl is the general client; winland-keys
+/// and winland-indicator send their own requests through <see cref="WinlandClient"/>.
 ///
 /// The event channel (<see cref="EventsPipeName"/>) is the opposite direction and carries no
 /// commands at all — see its own remarks. winland-indicator is the client.

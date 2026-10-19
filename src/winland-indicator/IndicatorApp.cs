@@ -10,17 +10,22 @@ using Winland.Common;
 
 namespace Winland.Indicator;
 
-/// <summary>One live monitor: its stable GDI device name, its work area, and its own DPI.</summary>
-internal sealed record MonitorInfo(string Device, Rectangle Work, int Dpi);
+/// <summary>
+/// One live monitor: its stable GDI device name, its whole area on the desktop, its work area (without the
+/// taskbar), and its own DPI.
+/// </summary>
+internal sealed record MonitorInfo(string Device, Rectangle Bounds, Rectangle Work, int Dpi);
 
 /// <summary>
 /// Root of the indicator: one <see cref="IndicatorWindow"/> per monitor, kept in step with the display
 /// configuration, fed by winland's broadcast event pipe, and remembering where the user parked each
 /// circle.
 ///
-/// It is a pure subscriber. It never sends Winland anything, and it runs unelevated — nothing
-/// it does needs administrator rights. When Winland is not running, the circles simply keep
-/// showing the last state they knew.
+/// It is a subscriber with one request: when a circle is dropped on another monitor, it asks Winland
+/// to move that workspace there ("move-workspace" on the control pipe). The circles still only ever
+/// show what Winland's snapshots say, so they change once the move has happened. It runs unelevated —
+/// nothing it does needs administrator rights. When Winland is not running, the circles simply keep
+/// showing the last state they knew, and a drop does nothing.
 /// </summary>
 internal sealed class IndicatorApp : ApplicationContext
 {
@@ -33,6 +38,9 @@ internal sealed class IndicatorApp : ApplicationContext
     private readonly Dictionary<string, IndicatorWindow> _windows = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DockState> _docks;
     private readonly EventClient _client;
+    // The waits only hold up a worker thread, never the circles: be patient with a busy environment.
+    private readonly WinlandClient _winland =
+        new(connectTimeout: TimeSpan.FromSeconds(2), replyTimeout: TimeSpan.FromSeconds(10));
     private readonly System.Windows.Forms.Timer _topmostHeartbeat; // a UI-thread timer, on purpose
 
     // The last snapshot Winland sent, by device name. Monitors missing from it (a fresh
@@ -105,10 +113,35 @@ internal sealed class IndicatorApp : ApplicationContext
 
             window = new IndicatorWindow(monitor, DockPositionOf(monitor.Device));
             window.DockPositionChanged += SaveDockPositions;
+            window.WorkspaceDropped += MoveWorkspace;
             window.SetWorkspace(WorkspaceOn(monitor.Device));
             window.Show();
             _windows[monitor.Device] = window;
         }
+    }
+
+    /// <summary>
+    /// A circle carrying <paramref name="workspace"/> was dropped at <paramref name="point"/> on another
+    /// monitor: ask Winland to move the workspace to that monitor. The request runs on a worker
+    /// thread — the move puts windows away and lays them out again, and the circles must stay responsive
+    /// meanwhile. Nothing is redrawn here: the snapshot that follows the move relabels both circles.
+    /// </summary>
+    private void MoveWorkspace(int workspace, Point point)
+    {
+        MonitorInfo? target = _windows.Values.Select(w => w.Monitor).FirstOrDefault(m => m.Bounds.Contains(point));
+        if (target == null)
+        {
+            return;
+        }
+
+        string command = $"move-workspace {workspace} {target.Device}";
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            if (!_winland.TrySend(command))
+            {
+                Log.Line($"indicator: '{command}' was not carried out (is winland running?)");
+            }
+        });
     }
 
     private DockState DockPositionOf(string device) =>
@@ -204,9 +237,11 @@ internal sealed class IndicatorApp : ApplicationContext
             var info = new MONITORINFOEX { cbSize = (uint)Marshal.SizeOf<MONITORINFOEX>() };
             if (GetMonitorInfoEx(hMon, ref info))
             {
+                RECT bounds = info.rcMonitor;
                 RECT work = info.rcWork;
                 found.Add(new MonitorInfo(
                     info.szDevice ?? "",
+                    Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom),
                     Rectangle.FromLTRB(work.Left, work.Top, work.Right, work.Bottom),
                     DpiOf(hMon)));
             }

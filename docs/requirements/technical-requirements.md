@@ -54,10 +54,12 @@
   with the shared ACL from `PipeAcl.ForCurrentUser()`.
 - **`winlandctl`** — a one-shot console client that sends one command over the pipe.
 - **`winland-indicator`** — `Program.Main` (single-instance mutex `Local\winland-indicator`) runs
-  `IndicatorApp`, which composes `EventClient`, `UiPoster`, and one `IndicatorWindow` per monitor. It
-  is a pure subscriber: it never writes to either pipe.
-- **`Winland.Common`** — `Ipc` (both pipe names + `OK`/`ERR` constants) and `Log` (append-only
-  logger).
+  `IndicatorApp`, which composes `EventClient`, `WinlandClient`, `UiPoster`, and one `IndicatorWindow`
+  per monitor. It subscribes to the event pipe and writes exactly one verb to the control pipe:
+  `move-workspace`, when a circle is dropped on another monitor.
+- **`Winland.Common`** — `Ipc` (both pipe names + `OK`/`ERR` constants), `WinlandClient` (best-effort
+  in-process control-pipe client, caller-chosen timeouts; used by `winland-keys` and
+  `winland-indicator`) and `Log` (append-only logger).
 
 ## 4. Input and Hotkey Pipeline Requirements (`winland-keys`)
 
@@ -101,8 +103,9 @@ broadcast-only **event** channel. Commands never travel on the event pipe and st
 on the command pipe.
 
 ### 5.1 Transport
-- A local named pipe, `\\.\pipe\winland` (`Ipc.PipeName`). `winland` is the server,
-  `winlandctl` the client.
+- A local named pipe, `\\.\pipe\winland` (`Ipc.PipeName`). `winland` is the server; `winlandctl` is
+  the general client, and `winland-keys` / `winland-indicator` send their own requests through
+  `WinlandClient`.
 - Line-based protocol: the client writes one command line; the server replies with a single line —
   `OK` (`Ipc.Ok`) on success, or `ERR <message>` (`Ipc.ErrPrefix`) on failure.
 
@@ -118,7 +121,9 @@ on the command pipe.
   its line is dropped after a read timeout (it must not wedge the single-connection server).
 
 ### 5.3 Dispatcher verbs
-- `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected), `link-here`,
+- `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected),
+  `move-workspace <n> <device>` (same rule for n; `ERR` when no monitor with that device name is
+  attached), `link-here`,
   `unlink`, `toggle-float`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
   `move-window <left|right>`, `focus-app <process>`,
   `focus-web <url>`, `close`,
@@ -165,7 +170,8 @@ on the command pipe.
   `_floating` / `_scrollFirst` / `_arranged` (each strip's order, floating members, scroll position and
   last layout),
   `_workspaceHome` (monitor pinning, keyed by stable GDI device name), `_shownByDevice` (what each
-  monitor shows, survives monitor sleep), `_monitors` (live monitor state).
+  monitor shows, survives monitor sleep), `_lastShown` (when each workspace was last shown, for the
+  fallback of a monitor whose workspace is moved away), `_monitors` (live monitor state).
 - Windows that are not members are never tiled or resized; workspace switches and release minimize
   them like everything else on the monitor.
 
@@ -188,6 +194,15 @@ on the command pipe.
 - `ReleaseCurrentWorkspace()` acts on the active monitor (under the cursor): minimize its visible
   windows and the released workspace's windows floating elsewhere (members stay assigned), remove the
   workspace's home binding, set the monitor's current workspace to `0` (none shown).
+
+### 6.4a Moving a Workspace
+- `MoveWorkspaceToMonitor(n, device)` re-homes `n` to the target monitor and shows it there: the
+  target puts away what it showed (that workspace keeps its home) and lays out `n`'s strip; `n`'s
+  visible floating windows on the source monitor are moved along, others stay; the source monitor
+  then shows `PreviousWorkspace.For(...)` — the most recently shown workspace homed on it that no
+  monitor shows, or `0`. When the monitors' DPIs differ, `n` is laid out a second time. Focus and
+  the cursor end on `n`. Membership is unchanged. Only the source and target monitors are touched.
+  See `features/workspaces.md` §7a.
 
 ### 6.5 Window Events
 - `EVENT_SYSTEM_FOREGROUND` remembers each workspace's last-focused tile and scrolls a strip to a tile
@@ -241,9 +256,10 @@ Z-order predecessors; not minimized per its window placement.
 - After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-float` and `movetoworkspace`, if the
   foreground window or its visible frame changed and the cursor isn't over it, move the cursor to the
   centre of its frame (`CursorWarp`).
-- After showing a workspace (`workspace`, `scratchpad` on/off), move the cursor to the centre of the
-  window focused there unless it is over it already; with nothing focused, to the centre of that
-  workspace's monitor unless it is on that monitor already. `workspace-release` never moves the cursor.
+- After showing a workspace (`workspace`, `scratchpad` on/off, `move-workspace`), move the cursor to
+  the centre of the window focused there unless it is over it already; with nothing focused, to the
+  centre of that workspace's monitor unless it is on that monitor already. `workspace-release` never
+  moves the cursor.
 
 ## 8. Config and Shortcut Requirements (`winland-keys`)
 
@@ -302,12 +318,23 @@ Z-order predecessors; not minimized per its window placement.
 - During a drag, the edge of the work area nearest the cursor becomes the docked edge **only** if the
   cursor is within the dock threshold (~80 px at 96 DPI) of it; otherwise the current edge stands.
 - The circle centres on the cursor's coordinate parallel to the docked edge, clamped so it stays fully
-  inside the work area — so it can never be dragged off its monitor.
+  inside the work area — docking never puts it on another monitor.
+
+**Carrying a workspace to another monitor**
+- While the cursor is outside the circle's own monitor (`rcMonitor`), a circle showing a numbered
+  workspace follows the cursor instead (centred on it, disc ~63% opaque). The `–` and `S` circles never
+  leave their monitor.
+- Released over another monitor: send `move-workspace <n> <device of that monitor>` on a worker thread
+  (`WinlandClient`: 2 s connect, 10 s reply; a failure is logged) and return the circle to the dock it had
+  when the drag began. Nothing is redrawn optimistically — the next snapshot relabels the circles.
+- Capture lost mid-carry (not a button release): return to the original dock, send nothing.
+- `WM_DPICHANGED` is declined: the circle's size and position always come from its own monitor's DPI.
 
 **Persistence**
 - Dock edge + fractional offset (0..1 along the edge) per monitor device name, in a plain-text file
   `winland-indicator-dock.txt` next to the exe (`# comment`, then `<device> <edge> <offset>` lines).
-- Written when a drag ends, read at startup; default `Top 0.8`. Monitors that are not currently
+- Written when a drag ends on the circle's own monitor (a carry leaves it unchanged), read at startup;
+  default `Top 0.8`. Monitors that are not currently
   attached keep their remembered entry. An unreadable or missing file is not an error.
 
 **Windowing and elevation**
@@ -359,8 +386,9 @@ Z-order predecessors; not minimized per its window placement.
   `winland.exe`); rotated to a
   single `.old` generation past ~1 MB.
 - `winland` logs workspace transitions and focus actions; `winland-keys`/`HotkeyConfig` logs
-  startup status and ignored binds; `winland-indicator` logs its monitor count at startup and each
-  successful (re)subscription to the event pipe — never its retries.
+  startup status and ignored binds; `winland-indicator` logs its monitor count at startup, each
+  successful (re)subscription to the event pipe — never its retries — and a `move-workspace` request
+  that was not carried out.
 
 ## 13. Security and Operational Considerations
 

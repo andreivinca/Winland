@@ -11,7 +11,8 @@ one app, **`winland`**, which runs two companion processes and ends them when it
 - **`winland-keys`** — companion: the hotkey daemon. Owns one global keyboard hook and runs the command
   bound to each Super (Win) combo.
 - **`winland-indicator`** — companion: the on-screen workspace circles, one per monitor. Runs unelevated
-  and only subscribes to `winland`'s broadcast event pipe.
+  and subscribes to `winland`'s broadcast event pipe; its one command back is moving a workspace to
+  another monitor when a circle is dropped there.
 - **`winlandctl`** — a one-shot CLI that forwards a single command to `winland` over its pipe.
 
 Current core capabilities:
@@ -26,7 +27,7 @@ Current core capabilities:
 - Configurable app shortcuts from text config (`config.conf`), launched with the user's normal
   (unelevated) token
 - A per-monitor on-screen workspace indicator: a draggable, edge-docked translucent circle that
-  updates live from `winland`
+  updates live from `winland` — and, dragged onto another monitor, moves its whole workspace there
 
 ## 2. Primary Goals
 
@@ -67,7 +68,8 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 - `Win+Left/Right` step through and scroll a tile row; `Win+Shift+Left/Right` move a tile along it
   (`winlandctl move-window left|right`).
 - `Win+S` toggles the roaming scratchpad on the mouse monitor (`winlandctl scratchpad`).
-- Workspaces are pinned to a home monitor after first use.
+- Workspaces are pinned to a home monitor after first use; dragging a workspace's indicator circle onto
+  another monitor moves it there (`winlandctl move-workspace N <device>`).
 - `Win+Shift+W` releases the current workspace from its monitor (`winlandctl workspace-release`).
 
 ### 5.2 Window Focus
@@ -82,7 +84,9 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 - One translucent circle per monitor showing that monitor's workspace (number, "S" for the
   scratchpad, "–" for none/unknown), updated live from `winland`'s event pipe.
 - Left-drag slides the circle **along** the work-area edge it is docked to; coming near another edge
-  re-docks it there. It can never leave its monitor or take focus.
+  re-docks it there. It never takes focus.
+- Dragged off its monitor, a circle showing a number carries its workspace: dropped on another monitor,
+  the whole workspace moves there and the old monitor goes back to the workspace it showed before.
 - The dock edge and position are remembered per monitor across restarts.
 - See `docs/features/workspace-indicator.md`.
 
@@ -100,8 +104,9 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 - WinForms for the tray UI, the layered indicator windows, and UI-thread message pumps
 - Win32/DWM/GDI interop for hooks, monitor/window operations, focus behavior, and per-pixel-alpha
   rendering (`UpdateLayeredWindow`)
-- Two local **named pipes**: `\\.\pipe\winland` (commands, `winlandctl` → `winland`) and
-  `\\.\pipe\winland-events` (state broadcast, `winland` → `winland-indicator`)
+- Two local **named pipes**: `\\.\pipe\winland` (commands, `winlandctl` / `winland-keys` /
+  `winland-indicator` → `winland`) and `\\.\pipe\winland-events` (state broadcast, `winland` →
+  `winland-indicator`)
 - PowerShell scripts for extensible launcher actions
 
 ## 7. Configuration and Assets
@@ -131,12 +136,14 @@ user's normal level, and ends both when it exits (tray → Exit), however it exi
 ## 9. Repository / Code Orientation
 
 ```
-src/Winland.Common/   Ipc.cs, Log.cs, UnelevatedLauncher.cs shared pipe protocol, logging, unelevated starts
+src/Winland.Common/   Ipc.cs, Log.cs, UnelevatedLauncher.cs, shared pipe protocol, logging, unelevated starts,
+                      WinlandClient.cs                      control-pipe client
 src/winland/          WinlandApp.cs, Companions.cs,         the main app (pipe-driven window manager)
                       KillOnCloseJob.cs, DispatchServer.cs,
                       EventServer.cs, PipeAcl.cs,
                       UiInvoker.cs, Dispatcher.cs,
-                      WorkspaceManager*.cs, WindowNavigator.cs, TrayIcon.cs
+                      WorkspaceManager*.cs, PreviousWorkspace.cs,
+                      WindowNavigator.cs, TrayIcon.cs
 src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          companion: hotkey daemon (the only keyboard hook)
                       Config.cs, HotkeyConfig.cs,
                       AppLauncher.cs, WindowsHotkeyDisabler.cs

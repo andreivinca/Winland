@@ -21,7 +21,10 @@ namespace Winland.Indicator;
 ///
 /// Dragging: the circle is always docked to one edge of its monitor's work area and slides ALONG that
 /// edge; motion perpendicular to the edge is ignored until the cursor comes close enough to another
-/// edge, which re-docks it there. It can therefore never be dragged off its monitor.
+/// edge, which re-docks it there. Taken onto ANOTHER monitor, a circle showing a numbered workspace leaves
+/// its edge and follows the cursor, carrying the workspace: dropped there, it raises
+/// <see cref="WorkspaceDropped"/> (the app asks winland to move the workspace) and goes back to its
+/// dock. A circle with nothing to carry (the dash, or the roaming scratchpad's "S") stays on its monitor.
 ///
 /// Extension point: every message this window cares about is handled in the one
 /// <see cref="WndProc"/> below. A right-click menu is the intended next addition — a WM_RBUTTONUP case
@@ -35,16 +38,27 @@ internal sealed class IndicatorWindow : Form
     private const int BaseDockThreshold = 80;   // how near an edge the cursor must come to dock there
 
     private const int CircleAlpha = 64;         // ~25% opaque white — a hint, not a widget
+    private const int CarriedCircleAlpha = 160; // picked up and carried to another monitor: plainly in hand
     private const int GlyphAlpha = 170;         // the number stays stronger than its disc, still soft
     private const float GlyphReferenceCircle = 32f; // the tray icon's circle, which the em sizes below fit
+
+    private const int ScratchpadWorkspace = int.MaxValue; // winland's reserved id (see Ipc.EventsPipeName)
 
     private MonitorInfo _monitor;
     private DockState _dock;
     private int _workspace;                     // raw id from the event pipe; 0 = none/not known yet
     private bool _dragging;
+    private DockState _pickedUpAt;              // the dock when the drag began; a carry returns the circle there
+    private Point? _carriedAt;                  // while carried over another monitor: the cursor there
 
     /// <summary>Raised when a drag ends, so the new <see cref="DockPosition"/> can be persisted.</summary>
     public event Action? DockPositionChanged;
+
+    /// <summary>
+    /// Raised when the circle is dropped on another monitor: the workspace it carried, and the point on
+    /// the screen where it was dropped.
+    /// </summary>
+    public event Action<int, Point>? WorkspaceDropped;
 
     public IndicatorWindow(MonitorInfo monitor, DockState dock)
     {
@@ -60,6 +74,9 @@ internal sealed class IndicatorWindow : Form
 
     /// <summary>The monitor this circle belongs to, by stable GDI device name (e.g. \\.\DISPLAY1).</summary>
     public string Device => _monitor.Device;
+
+    /// <summary>The monitor this circle belongs to.</summary>
+    public MonitorInfo Monitor => _monitor;
 
     /// <summary>Where the circle currently sits, for persistence.</summary>
     public DockState DockPosition => _dock;
@@ -126,6 +143,7 @@ internal sealed class IndicatorWindow : Form
         {
             case WM_LBUTTONDOWN:
                 _dragging = true;
+                _pickedUpAt = _dock;
                 Capture = true; // keep receiving moves once the cursor leaves the circle
                 return;
 
@@ -140,18 +158,26 @@ internal sealed class IndicatorWindow : Form
                 return;
 
             case WM_LBUTTONUP:
-                EndDrag();
+                EndDrag(dropped: true);
                 return;
 
             case WM_CAPTURECHANGED:
-                EndDrag(); // capture can be taken from us; finish the drag rather than get stuck in it
+                // Capture can be taken from us; finish the drag rather than get stuck in it — but that is
+                // not the user letting go, so a carried workspace is not dropped.
+                EndDrag(dropped: false);
                 break;
+
+            case WM_DPICHANGED:
+                // Carried over a monitor with another DPI, Windows suggests rescaling the window. Every pixel
+                // of the circle is sized and placed by Redraw from its own monitor's DPI, so decline.
+                m.Result = IntPtr.Zero;
+                return;
         }
 
         base.WndProc(ref m);
     }
 
-    private void EndDrag()
+    private void EndDrag(bool dropped)
     {
         if (!_dragging)
         {
@@ -159,17 +185,45 @@ internal sealed class IndicatorWindow : Form
         }
 
         _dragging = false;
+        Point? carriedTo = _carriedAt;
+        _carriedAt = null;
         Capture = false; // re-enters WndProc via WM_CAPTURECHANGED, which the flag above already ended
-        DockPositionChanged?.Invoke();
+
+        if (carriedTo is not Point point)
+        {
+            DockPositionChanged?.Invoke();
+            return;
+        }
+
+        // A carry was never a re-dock: back to where it was picked up, on its own monitor. The snapshot that
+        // follows the move relabels the circles.
+        _dock = _pickedUpAt;
+        Redraw();
+        if (dropped)
+        {
+            WorkspaceDropped?.Invoke(_workspace, point);
+        }
     }
 
+    /// <summary>A numbered workspace can be carried to another monitor; the dash and the scratchpad cannot.</summary>
+    private bool HasWorkspaceToCarry => _workspace >= 1 && _workspace != ScratchpadWorkspace;
+
     /// <summary>
-    /// Place the circle for a cursor at <paramref name="cursor"/> (screen coordinates). The edge only
-    /// changes when the cursor comes within the dock threshold of one — otherwise the drag slides the
-    /// circle along the edge it already occupies, and motion away from that edge does nothing.
+    /// Place the circle for a cursor at <paramref name="cursor"/> (screen coordinates). Over another
+    /// monitor, a circle with a workspace to carry follows the cursor. Otherwise it stays docked: the edge
+    /// only changes when the cursor comes within the dock threshold of one — the drag slides the circle
+    /// along the edge it already occupies, and motion away from that edge does nothing.
     /// </summary>
     private void DragTo(Point cursor)
     {
+        if (HasWorkspaceToCarry && !_monitor.Bounds.Contains(cursor))
+        {
+            _carriedAt = cursor;
+            Redraw();
+            return;
+        }
+
+        _carriedAt = null;
         (DockEdge edge, int distance) = NearestEdge(_monitor.Work, cursor);
         DockEdge docked = distance <= Scaled(BaseDockThreshold) ? edge : _dock.Edge;
 
@@ -211,8 +265,13 @@ internal sealed class IndicatorWindow : Form
 
     private Rectangle CircleBounds()
     {
-        Rectangle field = Field();
         int size = Scaled(BaseCircleSize);
+        if (_carriedAt is Point cursor)
+        {
+            return new Rectangle(cursor.X - size / 2, cursor.Y - size / 2, size, size); // in hand, on the cursor
+        }
+
+        Rectangle field = Field();
         int along = (int)Math.Round(_dock.Offset * Math.Max(0, field.Width - size));
         int down = (int)Math.Round(_dock.Offset * Math.Max(0, field.Height - size));
 
@@ -257,12 +316,12 @@ internal sealed class IndicatorWindow : Form
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
         g.Clear(Color.Transparent);
 
-        using var disc = new SolidBrush(Color.FromArgb(CircleAlpha, Color.White));
+        using var disc = new SolidBrush(Color.FromArgb(_carriedAt != null ? CarriedCircleAlpha : CircleAlpha, Color.White));
         g.FillEllipse(disc, 0.5f, 0.5f, size - 1f, size - 1f); // inset so the antialiased rim isn't clipped
 
         // Raw ids straight off the event pipe: int.MaxValue is winland's reserved scratchpad, and
         // anything below 1 means the monitor is showing nothing.
-        string text = _workspace == int.MaxValue ? "S"
+        string text = _workspace == ScratchpadWorkspace ? "S"
             : _workspace >= 1 ? _workspace.ToString()
             : "–";
 
@@ -343,6 +402,7 @@ internal sealed class IndicatorWindow : Form
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONUP = 0x0202;
     private const int WM_CAPTURECHANGED = 0x0215;
+    private const int WM_DPICHANGED = 0x02E0;
 
     private const int ULW_ALPHA = 0x00000002;
     private const byte AC_SRC_OVER = 0x00;

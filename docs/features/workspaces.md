@@ -32,6 +32,8 @@ strip by the user but still in the workspace; see `tiling.md`).
 Nothing else mutates membership. In particular:
 - **No windows are assigned at startup** — apps that are open when Winland starts stay unlinked until
   claimed.
+- **Moving a workspace to another monitor** (§7a) changes where the workspace lives, not who belongs to
+  it.
 - **Interaction never re-links** — activating, restoring, maximizing, or dragging a window never pulls it
   into a workspace. Dragging a tile, even onto another monitor, only makes it float in its own
   workspace.
@@ -55,6 +57,8 @@ keep it in view); the tiling hooks are described in `tiling.md` §4.
   (`\\.\DISPLAYn`), *not* an HMONITOR — handles are reissued on sleep/wake/display changes.
 - `_shownByDevice`: device name → the workspace shown on that monitor; survives a monitor dropping
   out of enumeration (sleep), so a wake restores what it was showing.
+- `_lastShown`: workspace → when it was last shown (ticks of `_showClock`, stamped by `SetShown`). Used
+  only to pick the workspace a monitor goes back to when its workspace is moved away (§7a).
 - `_monitors`: HMONITOR → live monitor state; rebuilt from enumeration before every operation.
 
 ### 3.2 Invariants
@@ -115,6 +119,37 @@ monitor later re-homes the workspace there and brings them back. Releasing while
 is shown puts the scratchpad's windows away and clears its return workspace instead (the scratchpad
 never has a home to unpin).
 
+## 7a. Moving a Workspace to Another Monitor (`move-workspace <n> <device>`)
+
+Sent by the on-screen indicator when the user drops a monitor's circle on another monitor (see
+`workspace-indicator.md` §4); also reachable as `winlandctl move-workspace 3 \\.\DISPLAY2`.
+`MoveWorkspaceToMonitor(n, device)` (`WorkspaceManager.MoveWorkspace.cs`):
+
+1. `RefreshMonitors()`; find the target by device name (case-insensitive). No such monitor attached →
+   `ERR`. Already shown there → nothing to do.
+2. Decide, before anything changes, where the **source** — the monitor showing `n` — goes back to:
+   `PreviousWorkspace.For` picks, among the workspaces **homed on the source** that **no monitor is
+   showing**, the most recently shown (`_lastShown`); `0` (show nothing) when there is none. It is pure
+   and unit-tested.
+3. **Re-home** `n` to the target. Remember `n`'s frontmost tile on the source (`RememberFrontmost`), and
+   carry `n`'s visible floating windows that sit on the source to the target (`MoveWindowToMonitor`:
+   same offset from the work-area origin, clamped, maximized stays maximized). Floating windows on any
+   other monitor stay where they are.
+4. `RenderWorkspaceOn(target, n)`: put away everything on the target that isn't `n`'s and the outgoing
+   workspace's windows elsewhere; `SetShown` (which also clears the source's claim on `n`); lay out
+   `n`'s strip on the target. This takes `n`'s tiles off the source.
+5. `RenderWorkspaceOn(source, previous)`: put away whatever is left on the source and show `previous`
+   there.
+6. If the two monitors differ in DPI, lay `n` out once more: a window arriving on a monitor of another
+   DPI rescales itself to Windows' suggested size, overriding its column.
+7. Focus `n` again and raise its floating windows (`FocusAndRaise` — step 5 focused `previous`), then
+   bring the mouse to the focused window (or the target's centre if `n` is empty).
+
+A workspace that no live monitor shows is just re-homed and shown on the target (steps 3–7 without a
+source). Membership never changes; the outgoing workspace of the target keeps its home there. The
+scratchpad is rejected: it has no home and already roams with its own toggle. One event guard
+brackets the whole operation, and it ends on `NotifyWorkspaceChanges`, like every other change.
+
 ## 8. The Scratchpad (`Win+S` → `scratchpad`)
 
 A roaming workspace reserved at `int.MaxValue` with **no home monitor**:
@@ -155,7 +190,8 @@ dash.
 ## 12. Extension Guidance
 
 When changing workspace logic:
-1. Preserve monitor isolation semantics.
+1. Preserve monitor isolation semantics: an operation touches only the monitors it is about (one for a
+   switch or release; the source and the target for a move).
 2. Preserve `_windowWorkspace` as the single membership authority — and keep membership mutations
    explicit-only (§2).
 3. Never tile, move or resize a window that isn't a workspace member; only put it away with its

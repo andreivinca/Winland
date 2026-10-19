@@ -13,7 +13,9 @@ namespace Winland.Keys;
 internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
 {
     private readonly KeyboardHook _hook;
-    private readonly AppLauncher _launcher = new(new WinlandClient());
+    // Short timeouts: a launch must never wait long on a Winland that is down or busy.
+    private readonly AppLauncher _launcher =
+        new(new WinlandClient(connectTimeout: TimeSpan.FromMilliseconds(250), replyTimeout: TimeSpan.FromSeconds(1)));
     private readonly IReadOnlyList<KeyBind> _binds;
     private bool _disposed;
 

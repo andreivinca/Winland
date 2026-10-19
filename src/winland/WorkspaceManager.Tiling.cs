@@ -396,6 +396,15 @@ internal sealed partial class WorkspaceManager
             }
         }
 
+        return FocusAndRaise(workspace);
+    }
+
+    /// <summary>
+    /// Land focus on a workspace that is on screen (its last-active window), then raise its floating windows
+    /// above its tiles. Returns the window it focused, or Zero.
+    /// </summary>
+    private IntPtr FocusAndRaise(int workspace)
+    {
         // Focus first: focusing raises the focused window, which would cover a floating one again.
         IntPtr focused = FocusWorkspace(workspace);
         RaiseFloating(workspace);
