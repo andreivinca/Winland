@@ -344,7 +344,7 @@ internal sealed partial class WorkspaceManager
     /// Floating windows stand above the tiles. Restored without being activated, a floating window comes
     /// back at its old place in the Z order — often under the tiles of the monitor it sits on, invisible.
     /// Raise the workspace's floating windows on screen to the top, keeping their order among themselves,
-    /// without focusing any of them.
+    /// without focusing any of them. Windows the user made always-on-top are already above and left alone.
     /// </summary>
     private void RaiseFloating(int workspace)
     {
@@ -352,7 +352,7 @@ internal sealed partial class WorkspaceManager
         EnumWindows((h, _) =>
         {
             if (_floating.Contains(h) && _windowWorkspace.TryGetValue(h, out int owner) && owner == workspace
-                && IsOnScreen(h) && !IsHungAppWindow(h))
+                && IsOnScreen(h) && !IsTopmost(h) && !IsHungAppWindow(h))
             {
                 floating.Add(h);
             }
@@ -360,20 +360,15 @@ internal sealed partial class WorkspaceManager
             return true;
         }, IntPtr.Zero);
 
-        if (floating.Count == 0)
-        {
-            return;
-        }
-
         // EnumWindows runs top to bottom: raise from the bottom up, so the topmost one ends on top again.
-        // Windows ignores HWND_TOP for another process's window unless the caller may set the foreground.
-        WithForegroundLockLifted(() =>
+        // A plain HWND_TOP from a process that isn't in the foreground is silently ignored (SetWindowPos
+        // returns TRUE and the Z order doesn't change). Passing through the topmost band and straight back
+        // out is honoured: it leaves the window at the top of the normal band, still not activated.
+        for (int i = floating.Count - 1; i >= 0; i--)
         {
-            for (int i = floating.Count - 1; i >= 0; i--)
-            {
-                SetWindowPos(floating[i], HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-        });
+            SetWindowPos(floating[i], HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(floating[i], HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
     }
 
     /// <summary>
@@ -756,7 +751,8 @@ internal sealed partial class WorkspaceManager
     private const uint SWP_NOOWNERZORDER = 0x0200;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOMOVE = 0x0002;
-    private static readonly IntPtr HWND_TOP = IntPtr.Zero;
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private static readonly IntPtr HWND_NOTOPMOST = new(-2);
 
     private const uint MONITOR_DEFAULTTOPRIMARY = 1;
     private const int MDT_EFFECTIVE_DPI = 0;

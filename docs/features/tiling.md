@@ -65,8 +65,10 @@ their place in the order but take no column.
 
 Showing a workspace (`ShowWorkspace`) lays out its strip, restores its minimized floating windows in
 place, on whatever monitor they are (`RestoreInPlace`, maximized again if they were), focuses it, and
-then raises its floating windows above everything (`RaiseFloating`: `HWND_TOP` with the foreground lock
-lifted, no activation, their order kept). Restored without activation, a floating window would otherwise
+then raises its floating windows above everything (`RaiseFloating`: each passes through the topmost band
+and straight back out — `HWND_TOPMOST` then `HWND_NOTOPMOST`, no activation, bottom-up so their order is
+kept; a plain `HWND_TOP` from a background process is silently ignored; windows the user made
+always-on-top are skipped). Restored without activation, a floating window would otherwise
 return at its old Z position — under the tiles of the monitor it sits on. The scratchpad roams, so its
 floating windows are moved to its monitor instead. Putting a workspace away (`PutAwayWorkspace`)
 minimizes all its windows, wherever they are.
