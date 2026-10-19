@@ -36,10 +36,10 @@
   - `install-autostart.ps1` (tracked in `packaging/`, copied into the assembled `dist/`) — register
     one logon Scheduled Task, `Winland`, running `winland.exe` at `-RunLevel Highest`; removes the
     per-process tasks earlier versions registered.
-  - `run.ps1` (repo root) — developer launcher: stop → build `src/winland` → start `winland.exe`.
-  - `publish-dist.ps1` (repo root) — assemble a self-contained `dist/`.
-  - `run.ps1` and `publish-dist.ps1` stop `winland`, `winland-keys`, `winland-indicator` and
-    `winland-env` (Winland's former name).
+  - `publish-dist.ps1` (repo root) — assemble a self-contained `dist/`. It first stops `winland`,
+    `winland-keys`, `winland-indicator` and `winland-env` (Winland's former name).
+- There is no launcher script: from source, build `src/winland` and start the `winland.exe` in its
+  output folder — it elevates through its manifest and starts its companions itself.
 
 ## 3. Core Technical Architecture
 

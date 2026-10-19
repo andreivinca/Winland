@@ -24,7 +24,8 @@ the helper scripts.
 To stop it: right-click the tray icon → **Exit** (this also ends its helper processes). To start it
 automatically at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-logon).
 
-> Running from source instead? Use `.\run.ps1` (builds and launches). See [Building](#building).
+> Running from source instead? Build `src\winland` and start the `winland.exe` it produces — see
+> [Building](#building).
 
 ---
 
@@ -164,8 +165,8 @@ scratchpad is shown and press `Win+Space`.
 All shortcuts live in **`config.conf`**, a plain text file sitting next to `winland-keys.exe` (in the
 `dist/` folder). Edit it with any text editor.
 
-**To apply changes, restart Winland** (tray icon → Exit, then start `winland.exe` again — or re-run
-`run.ps1`). Config is read once, when the keys helper starts.
+**To apply changes, restart Winland** (tray icon → Exit, then start `winland.exe` again). Config is
+read once, when the keys helper starts.
 
 ### Bind syntax
 
@@ -371,18 +372,18 @@ dotnet test Winland.slnx          # unit tests (tiling layout and order)
 ```
 
 Building `winland` also builds its companions and puts them — with `winlandctl.exe`, `config.conf` and
-the helper scripts — next to `winland.exe`, so its build folder runs as is. The simplest way to launch
-from source is the dev script:
+the helper scripts — next to `winland.exe`, so its build folder runs as is. To run from source, build
+it and start that `winland.exe`; like the packaged one, it asks for admin once and starts the rest
+itself:
 
 ```powershell
-.\run.ps1              # stop Winland → build (Debug) → start winland.exe (one UAC prompt)
-.\run.ps1 -Dir .\dist  # skip the build, run the pre-built winland.exe in dist
-.\run.ps1 -NoBuild     # start whatever is already built
-.\run.ps1 -Stop        # stop Winland
+dotnet build src\winland
+.\src\winland\bin\Debug\net10.0-windows\winland.exe
 ```
 
-It stops Winland **before** building (a running process locks its own DLLs), so a rebuild never fails
-on a locked file. `publish-dist.ps1` assembles a self-contained `dist/` folder.
+**Exit Winland from the tray before rebuilding**: a running Winland locks its own DLLs, so the build
+would fail on them — and only one Winland runs at a time, so starting a second `winland.exe` does
+nothing. `publish-dist.ps1` assembles a self-contained `dist/` folder.
 
 ### Auto-start at logon
 

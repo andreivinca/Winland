@@ -131,7 +131,9 @@ user's normal level, and ends both when it exits (tray → Exit), however it exi
 
 - **Packaged:** double-click `dist/winland.exe`. `install-autostart.ps1` (tracked in `packaging/`)
   registers it as a logon Scheduled Task with highest privileges (no UAC at sign-in).
-- **From source:** `run.ps1` at the repo root (stop → build → start `winland.exe`).
+- **From source:** `dotnet build src/winland`, then start
+  `src/winland/bin/<Configuration>/net10.0-windows/winland.exe` — its build folder runs as is. Exit
+  a running Winland first: it locks its DLLs, and a second instance exits at once.
 
 ## 9. Repository / Code Orientation
 

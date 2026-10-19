@@ -150,8 +150,8 @@ Behavior summary:
 
 ## 7. Operational Considerations
 
-- Config is read when the keys daemon starts; restart Winland (tray → Exit, then start it again, or
-  `run.ps1`) to apply changes.
+- Config is read when the keys daemon starts; restart Winland (tray → Exit, then start it again) to
+  apply changes.
 - Scripts and `winlandctl.exe` are expected next to `winland-keys.exe` (copied during build — and the
   whole set next to `winland.exe`, which starts the keys daemon).
 - Execution policy bypass increases flexibility but expands trust assumptions.
