@@ -2,7 +2,7 @@
 .SYNOPSIS
   Focus an already-running app's window, or launch it if it isn't running.
 .DESCRIPTION
-  The window work is done by winland-env ("winlandctl focus-app"): it focuses the app's frontmost
+  The window work is done by winland ("winlandctl focus-app"): it focuses the app's frontmost
   window, restoring a minimized one if that is all there is. It reports failure when there is nothing
   to focus or the app is already in the foreground — in both cases this script starts a new instance.
 .PARAMETER App
@@ -28,14 +28,14 @@ if ([string]::IsNullOrWhiteSpace($Match)) {
 }
 
 # winlandctl sits next to this script (packaged layout). Exit code 0 means a window was focused; any
-# failure (no window, already foreground, winland-env not running) means "launch instead".
+# failure (no window, already foreground, winland not running) means "launch instead".
 $ctl = Join-Path $PSScriptRoot 'winlandctl.exe'
 & $ctl focus-app $Match 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     return
 }
 
-# Ask winland-env to open the new window on the monitor under the mouse.
+# Ask winland to open the new window on the monitor under the mouse.
 & $ctl place-next-window 2>$null | Out-Null
 
 if ($null -eq $LaunchArgs -or $LaunchArgs.Count -eq 0) {

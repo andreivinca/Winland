@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Per-monitor-v2 DPI awareness: window and monitor coordinates are then real physical pixels on
+         every monitor, which tiling needs to place windows exactly on mixed-DPI setups. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>winland</AssemblyName>
+    <Version>0.4.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="winland.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Winland.Common\Winland.Common.csproj" />
+  </ItemGroup>
+
+  <!--
+    Companions: Winland starts these from its own folder (Companions.cs), so building Winland must leave a
+    folder that runs as is. They are built before Winland (ReferenceOutputAssembly=false: no code
+    depends on them), then CopyCompanions puts each one's whole build output next to winland.exe — its
+    apphost, dlls and runtimeconfig, and for winland-keys also config.conf, the helper scripts and
+    winlandctl. Publishing (publish-dist.ps1) publishes each one itself, so the copy skips RID builds.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\winland-keys\winland-keys.csproj" ReferenceOutputAssembly="false" Companion="true" />
+    <ProjectReference Include="..\winland-indicator\winland-indicator.csproj" ReferenceOutputAssembly="false" Companion="true" />
+  </ItemGroup>
+
+  <Target Name="CopyCompanions" AfterTargets="Build" Condition="'$(RuntimeIdentifier)' == ''">
+    <MSBuild Projects="@(ProjectReference)" Condition="'%(ProjectReference.Companion)' == 'true'"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_CompanionTargetPath" />
+    </MSBuild>
+    <ItemGroup>
+      <!-- Everything in each companion's output folder, except files its own runs there left behind. -->
+      <_CompanionFile Include="%(_CompanionTargetPath.RootDir)%(_CompanionTargetPath.Directory)**\*"
+                      Exclude="%(_CompanionTargetPath.RootDir)%(_CompanionTargetPath.Directory)**\winland-hooklog.txt*;%(_CompanionTargetPath.RootDir)%(_CompanionTargetPath.Directory)**\winland-indicator-dock.txt" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_CompanionFile)"
+          DestinationFiles="@(_CompanionFile->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

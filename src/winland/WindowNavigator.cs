@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 internal enum Direction
 {

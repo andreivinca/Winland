@@ -1,19 +1,18 @@
 <#
 .SYNOPSIS
-  Register (or remove) Winland's processes to start at logon.
+  Register (or remove) Winland to start at logon.
 
-  Winland is two long-running elevated processes — winland-env (the window-manager service) and
-  winland-keys (the hotkey daemon) — plus winland-indicator (the on-screen workspace circles), which
-  runs at the user's normal level. This registers one Scheduled Task per process, triggered at logon;
-  the daemons run with highest privileges (so there is no UAC prompt at sign-in).
+  Winland is one program, winland.exe, which starts and ends its companions (winland-keys and
+  winland-indicator) itself. It runs elevated, so this registers one Scheduled Task, triggered at logon,
+  that runs it with highest privileges — no UAC prompt at sign-in.
 
   Run this script itself elevated (from an admin PowerShell).
 
 .PARAMETER Dir
-  Folder containing the Winland exes. Defaults to this script's folder.
+  Folder containing winland.exe. Defaults to this script's folder.
 
 .PARAMETER Uninstall
-  Remove the scheduled tasks instead of creating them.
+  Remove the scheduled task instead of creating it.
 
 .EXAMPLE
   .\install-autostart.ps1
@@ -24,7 +23,7 @@ param(
     [switch]$Uninstall
 )
 
-# Registering tasks with -RunLevel Highest needs admin; fail up front with a clear message instead
+# Registering a task with -RunLevel Highest needs admin; fail up front with a clear message instead
 # of letting Register-ScheduledTask produce a cryptic one.
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
@@ -33,38 +32,36 @@ if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
     return
 }
 
-$tasks = @(
-    @{ Name = 'Winland Env';  Exe = Join-Path $Dir 'winland-env.exe';  RunLevel = 'Highest' },
-    @{ Name = 'Winland Keys'; Exe = Join-Path $Dir 'winland-keys.exe'; RunLevel = 'Highest' },
-    # Limited, not Highest: the indicator only reads workspace state off a pipe and draws a circle,
-    # so it has no reason to hold administrator rights at all. Elevating a UI window that the user
-    # clicks and drags would be gratuitous.
-    @{ Name = 'Winland Indicator'; Exe = Join-Path $Dir 'winland-indicator.exe'; RunLevel = 'Limited' }
-)
+$taskName = 'Winland'
+$exe = Join-Path $Dir 'winland.exe'
+
+# Earlier versions registered one task per process; Winland now starts the others itself. Remove them
+# either way, so an old task can't start a second copy of a companion at logon.
+foreach ($legacy in 'Winland Env', 'Winland Keys', 'Winland Indicator') {
+    if (Get-ScheduledTask -TaskName $legacy -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $legacy -Confirm:$false
+        Write-Host "Removed old task: $legacy"
+    }
+}
 
 if ($Uninstall) {
-    foreach ($t in $tasks) {
-        Unregister-ScheduledTask -TaskName $t.Name -Confirm:$false -ErrorAction SilentlyContinue
-        Write-Host "Removed task: $($t.Name)"
-    }
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "Removed task: $taskName"
     return
 }
 
-foreach ($t in $tasks) {
-    if (-not (Test-Path $t.Exe)) {
-        Write-Error "Not found: $($t.Exe). Pass -Dir <folder containing the exes>."
-        continue
-    }
-
-    $action    = New-ScheduledTaskAction -Execute $t.Exe
-    $trigger   = New-ScheduledTaskTrigger -AtLogOn
-    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel $t.RunLevel
-    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-                    -ExecutionTimeLimit ([TimeSpan]::Zero)
-
-    Register-ScheduledTask -TaskName $t.Name -Action $action -Trigger $trigger `
-        -Principal $principal -Settings $settings -Force | Out-Null
-    Write-Host "Registered task: $($t.Name) -> $($t.Exe)"
+if (-not (Test-Path $exe)) {
+    Write-Error "Not found: $exe. Pass -Dir <folder containing winland.exe>."
+    return
 }
 
-Write-Host "Done. winland-env and winland-keys will start elevated at next logon, winland-indicator unelevated (or start them now)."
+$action    = New-ScheduledTaskAction -Execute $exe
+$trigger   = New-ScheduledTaskTrigger -AtLogOn
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit ([TimeSpan]::Zero)
+
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+    -Principal $principal -Settings $settings -Force | Out-Null
+Write-Host "Registered task: $taskName -> $exe"
+Write-Host 'Done. Winland will start at next logon (or start it now).'

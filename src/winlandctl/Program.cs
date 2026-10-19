@@ -3,7 +3,7 @@ using System.IO;
 using System.IO.Pipes;
 using Winland.Common;
 
-// winlandctl: the control client. Sends one command line to the running winland-env over its named
+// winlandctl: the control client. Sends one command line to the running winland over its named
 // pipe and prints/returns the result. Usage: winlandctl <verb> [args...]   e.g. winlandctl workspace 1
 //
 // Exit codes: 0 = OK, 1 = env replied ERR (or no reply), 2 = bad usage, 3 = could not reach env.
@@ -29,7 +29,7 @@ try
 
     writer.WriteLine(command);
 
-    // Bounded wait: a wedged environment must not leave one stuck winlandctl behind per key press.
+    // Bounded wait: a wedged Winland must not leave one stuck winlandctl behind per key press.
     string? response;
     try
     {
@@ -37,13 +37,13 @@ try
     }
     catch (TimeoutException)
     {
-        Console.Error.WriteLine("winlandctl: winland-env did not reply (timed out)");
+        Console.Error.WriteLine("winlandctl: winland did not reply (timed out)");
         return 1;
     }
 
     if (response is null)
     {
-        Console.Error.WriteLine("winlandctl: no response from winland-env");
+        Console.Error.WriteLine("winlandctl: no response from winland");
         return 1;
     }
 
@@ -57,12 +57,12 @@ try
 }
 catch (TimeoutException)
 {
-    Console.Error.WriteLine("winlandctl: winland-env is not running or is busy (connect timed out)");
+    Console.Error.WriteLine("winlandctl: winland is not running or is busy (connect timed out)");
     return 3;
 }
 catch (UnauthorizedAccessException)
 {
-    Console.Error.WriteLine("winlandctl: access to the winland-env pipe was denied (different user?)");
+    Console.Error.WriteLine("winlandctl: access to the winland pipe was denied (different user?)");
     return 3;
 }
 catch (Exception ex)

@@ -4,7 +4,7 @@ using System.IO.Pipes;
 using System.Threading;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// The control-channel server: a named-pipe listener on a background thread. Each connection carries one

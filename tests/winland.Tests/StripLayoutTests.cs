@@ -1,6 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace Winland.Env.Tests;
+namespace Winland.Tests;
 
 [TestClass]
 public sealed class StripLayoutTests

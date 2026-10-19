@@ -2,23 +2,31 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace Winland.Keys;
+namespace Winland.Common;
 
 /// <summary>
-/// Starts programs with the user's NORMAL (unelevated) token. This daemon runs elevated, and children
-/// inherit elevation — so without this, every app a bind launches (browser, editor, terminal) would
-/// silently run as administrator. The fix is the classic "borrow the shell's token" technique: Explorer
-/// (the desktop shell) always runs unelevated, so we duplicate its token and create the process with
-/// that. Requires SeImpersonatePrivilege, which an elevated process has.
+/// Starts programs with the user's NORMAL (unelevated) token, from an elevated Winland process. Children
+/// inherit elevation — so without this, every app a bind launches (browser, editor, terminal) and the
+/// on-screen indicator would silently run as administrator. The fix is the classic "borrow the shell's
+/// token" technique: Explorer (the desktop shell) always runs unelevated, so we duplicate its token and
+/// create the process with that. Requires SeImpersonatePrivilege, which an elevated process has.
 ///
-/// Both entry points return false when the unelevated route is unavailable (no shell running, token
+/// Every entry point returns false when the unelevated route is unavailable (no shell running, token
 /// APIs refused, UAC disabled) — callers then fall back to a plain, elevated launch.
 /// </summary>
-internal static class UnelevatedLauncher
+public static class UnelevatedLauncher
 {
     /// <summary>Start <paramref name="exePath"/> unelevated, CreateProcess-style (no shell semantics).</summary>
-    public static bool Start(string exePath, string arguments, string? workingDirectory = null)
+    public static bool Start(string exePath, string arguments, string? workingDirectory = null) =>
+        Start(exePath, arguments, workingDirectory, out _);
+
+    /// <summary>
+    /// Start <paramref name="exePath"/> unelevated, CreateProcess-style (no shell semantics), and report
+    /// the new process's id.
+    /// </summary>
+    public static bool Start(string exePath, string arguments, string? workingDirectory, out int processId)
     {
+        processId = 0;
         IntPtr token = GetShellPrimaryToken();
         if (token == IntPtr.Zero)
         {
@@ -36,6 +44,7 @@ internal static class UnelevatedLauncher
                 return false;
             }
 
+            processId = (int)process.dwProcessId;
             CloseHandle(process.hProcess);
             CloseHandle(process.hThread);
             return true;

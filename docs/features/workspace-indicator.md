@@ -7,7 +7,7 @@ showing — something the tray icon cannot do, because Windows 11 only gives tra
 monitor's taskbar.
 
 The indicator is its own process, `winland-indicator`, and a **pure subscriber**: it reads workspace
-state off `winland-env`'s broadcast event pipe and draws. It issues no commands, holds no window
+state off `winland`'s broadcast event pipe and draws. It issues no commands, holds no window
 handles, and needs no elevation. Winland works exactly as before without it.
 
 ## 2. What the User Sees
@@ -73,25 +73,25 @@ log), `winland-indicator-dock.txt`:
 
 ## 5. The Event Protocol
 
-`winland-env` publishes on a second named pipe, `\\.\pipe\winland-env-events`
+`winland` publishes on a second named pipe, `\\.\pipe\winland-events`
 (`Ipc.EventsPipeName`), which is **outbound only** — nothing a subscriber could write is ever read.
 
 - **Message**: one line per snapshot, space-separated `<device>=<workspace>` pairs ordered
   left-to-right, e.g. `\\.\DISPLAY1=3 \\.\DISPLAY2=5`. Device names contain no spaces, so the format
   needs no escaping. The workspace is the **raw** number: `0` = nothing shown, `int.MaxValue` = the
   scratchpad. Mapping those to `–` and `S` is the client's business.
-- **On connect**: the current snapshot is sent immediately, so a subscriber that starts after the
-  environment is instantly correct.
+- **On connect**: the current snapshot is sent immediately, so a subscriber that starts after
+  Winland is instantly correct.
 - **On change**: `WorkspaceManager.NotifyWorkspaceChanges` hands `WorkspaceSnapshot` to
   `EventServer.Publish`.
 - **Latest wins**: only the newest snapshot is kept pending. A subscriber that was slow skips the
   states it missed, which is exactly right for "what is on screen right now".
-- **Never blocking**: `Publish` runs on the environment's UI thread and only stores a line and pulses
+- **Never blocking**: `Publish` runs on Winland's UI thread and only stores a line and pulses
   the writer threads. Each subscriber has its own thread, so a stalled reader can block nobody but
   itself, and is dropped silently.
 - **Client side** (`EventClient`): a background thread that connects, reads lines, parses them into
   `device → workspace`, and hands each snapshot to the UI thread via `UiPoster`. If the pipe is
-  unavailable or drops — the environment isn't running yet, or was restarted — it retries forever
+  unavailable or drops — Winland isn't running yet, or was restarted — it retries forever
   (~2 s apart) while the circles keep showing the last state they knew. Only successful subscriptions
   are logged, never the retries.
 
@@ -101,7 +101,7 @@ log), `winland-indicator-dock.txt`:
   exists. Circle size, margin and dock threshold are all scaled by **each monitor's own** DPI
   (`GetDpiForMonitor`), so a 4K screen next to a 1080p one gets circles of the same physical size.
 - Monitors are enumerated with `EnumDisplayMonitors` + `GetMonitorInfo` (MONITORINFOEX) rather than
-  WinForms' `Screen`, so the device names are exactly the ones `winland-env` keys its state on, and
+  WinForms' `Screen`, so the device names are exactly the ones `winland` keys its state on, and
   the **work area** (`rcWork`) is used so a circle never lands under the taskbar.
 - `SystemEvents.DisplaySettingsChanged` re-syncs the window set on the UI thread: windows for
   vanished monitors are disposed, surviving ones adopt the new work area/DPI (keeping their edge and
@@ -127,7 +127,7 @@ UI-thread heartbeat covers the stretches where nothing is redrawn.
 
 - **Fullscreen exclusive apps**: the circles are plain topmost windows and are *not* hidden over
   fullscreen games or video. This is not implemented.
-- **State follows the environment**: with `winland-env` stopped, the circles keep the last snapshot
+- **State follows Winland**: with `winland` stopped, the circles keep the last snapshot
   they received (they do not blank out and do not claim to be current).
 - **A sleeping monitor is absent** from the snapshot; its circle shows `–` until the monitor comes
   back and a workspace change republishes.

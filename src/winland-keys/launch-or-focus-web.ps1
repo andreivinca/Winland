@@ -16,7 +16,7 @@ param(
 )
 
 # winlandctl sits next to this script (packaged layout). Exit code 0 means a window was focused; any
-# failure (no window, already foreground, winland-env not running) means "launch instead".
+# failure (no window, already foreground, winland not running) means "launch instead".
 & (Join-Path $PSScriptRoot 'winlandctl.exe') focus-web $Url 2>$null | Out-Null
 if ($LASTEXITCODE -eq 0) {
     return

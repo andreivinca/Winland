@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// The system-tray presence: a NotifyIcon drawn once as a white circle with a "W" (per-monitor

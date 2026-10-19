@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// The mouse follows keyboard focus. When a command focuses another window or moves the focused one, the

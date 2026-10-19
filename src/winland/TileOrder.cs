@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Left-to-right order of the tiles in a workspace's strip, as pure list operations. Every operation

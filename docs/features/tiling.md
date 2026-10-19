@@ -17,8 +17,8 @@ either a **tile** or **floating**:
   else on a monitor, it is put away (minimized) when that monitor switches workspace or is released,
   and comes back with none.
 
-The code lives in `winland-env`: `WorkspaceManager.Tiling.cs` (behaviour), `StripLayout.cs` (geometry)
-and `TileOrder.cs` (order). The last two are pure and covered by `tests/winland-env.Tests`.
+The code lives in `winland`: `WorkspaceManager.Tiling.cs` (behaviour), `StripLayout.cs` (geometry)
+and `TileOrder.cs` (order). The last two are pure and covered by `tests/winland.Tests`.
 
 ## 2. The Scrolling Strip
 
@@ -30,7 +30,7 @@ showing it, separated and surrounded by a gap.
 - Beyond that, the columns keep the width of a full view (`VisibleCount` columns across the monitor)
   and the row overflows. The **view** shows `VisibleCount` consecutive tiles starting at `First`, and
   scrolls by whole tiles.
-- Gap and minimum width scale with the monitor's effective DPI (`GetDpiForMonitor`); `winland-env` is
+- Gap and minimum width scale with the monitor's effective DPI (`GetDpiForMonitor`); `winland` is
   per-monitor-v2 DPI aware so all coordinates are physical pixels.
 
 `StripLayout.Arrange(work, dpi, tileCount, first, reveal)` returns the scroll position and one slot per
@@ -117,7 +117,7 @@ workspace shown there (`TileLaunchedWindow`). Windows opened any other way stay 
   the restore position.
 - `WINDOWPLACEMENT` rectangles are in **workspace coordinates** (relative to the primary monitor's work
   area); `ToWorkspaceCoordinates` converts.
-- Hung windows (`IsHungAppWindow`) are skipped, so one frozen app cannot freeze `winland-env` — and
+- Hung windows (`IsHungAppWindow`) are skipped, so one frozen app cannot freeze `winland` — and
   every shortcut with it.
 - Nothing activates a window except the explicit focus at the end of a command.
 

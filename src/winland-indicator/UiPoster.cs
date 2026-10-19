@@ -10,7 +10,7 @@ namespace Winland.Indicator;
 /// The UI thread's doorbell. Workspace snapshots arrive on the event client's thread and display
 /// changes on the system-events thread, but every window operation must happen on the UI thread — so
 /// callers hand their work here and a hidden message window runs it from the message loop. This is
-/// winland-env's <c>UiInvoker</c> trick, one-way: the caller never waits for a result.
+/// winland's <c>UiInvoker</c> trick, one-way: the caller never waits for a result.
 ///
 /// Construct it on the UI thread; its handle is pumped by the app's message loop.
 /// </summary>

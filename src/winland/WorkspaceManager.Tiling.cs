@@ -4,7 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Tiling. A workspace's members are its windows, and each is either a tile or floating:

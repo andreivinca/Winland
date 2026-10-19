@@ -1,37 +1,32 @@
 <#
 .SYNOPSIS
-  Start (or stop) all of Winland in one go.
+  Developer launcher: stop Winland, build it from source, and start it again.
 
 .DESCRIPTION
-  Winland is two long-running elevated processes plus one unelevated widget:
-    * winland-env       — the window-manager service (workspaces, focus, tray). Has no keyboard hook;
-                          it only reacts to commands on its control pipe.
-    * winland-keys      — the hotkey daemon. Owns the global keyboard hook and, on each Super combo,
-                          runs the matching command (e.g. "winlandctl workspace 1") which reaches
-                          winland-env over the pipe. It needs winlandctl.exe sitting next to it.
-    * winland-indicator — the on-screen workspace circles, one per monitor. Subscribes to
-                          winland-env's event pipe; needs no elevation of its own.
+  Winland is one program, winland.exe. It starts its companions itself — winland-keys (the keyboard
+  hook) and winland-indicator (the workspace circles) — and ends them when it exits (tray -> Exit).
+  Building src\winland builds the companions too and puts them next to winland.exe.
 
-  The daemons must run elevated. This script self-elevates with a SINGLE UAC prompt, then (in order):
-  stops any previous instances, builds, and starts everything. Stopping first is what frees the
-  build outputs — a running daemon holds a lock on its own DLLs.
+  Winland runs elevated, so stopping it needs admin too: this script self-elevates with a SINGLE UAC
+  prompt, then stops a running Winland, builds, and starts winland.exe. Stopping first is what frees the
+  build output — a running process holds a lock on its own DLLs.
 
 .PARAMETER Dir
-  Run pre-built exes from this one folder (e.g. a published .\dist) instead of building from source.
+  Run the pre-built winland.exe in this folder (e.g. a published .\dist) instead of building.
 
 .PARAMETER Configuration
   Build configuration for source mode (default: Debug).
 
 .PARAMETER NoBuild
-  Source mode only: skip the build and launch whatever is already in bin.
+  Source mode only: skip the build and start whatever is already in bin.
 
 .PARAMETER Stop
-  Stop everything Winland is running and exit (does not build or start anything).
+  Stop Winland and exit (does not build or start anything).
 
 .EXAMPLE
-  .\run.ps1                 # stop old, build Debug from source, start everything (daemons elevated)
-  .\run.ps1 -Dir .\dist     # stop old, start the pre-built exes in .\dist
-  .\run.ps1 -Stop           # stop every Winland process
+  .\run.ps1                 # stop, build Debug from source, start Winland
+  .\run.ps1 -Dir .\dist     # stop, start the pre-built winland.exe in .\dist
+  .\run.ps1 -Stop           # stop Winland
 #>
 param(
     [string]$Dir,
@@ -64,7 +59,7 @@ function Test-Admin {
         [Security.Principal.WindowsBuiltinRole]::Administrator)
 }
 
-# Everything below needs admin (starting/stopping the elevated daemons). If we aren't elevated,
+# Everything below needs admin (stopping and starting elevated Winland). If we aren't elevated,
 # relaunch this same script elevated — one UAC prompt.
 if (-not (Test-Admin)) {
     $inner = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Elevated -Configuration $Configuration"
@@ -77,63 +72,32 @@ if (-not (Test-Admin)) {
 
 # --- elevated from here on ---
 
-# Where the exes live: a single -Dir, or each project's build output in source mode.
-if ($Dir) {
-    $envExe       = Join-Path $Dir 'winland-env.exe'
-    $keysExe      = Join-Path $Dir 'winland-keys.exe'
-    $indicatorExe = Join-Path $Dir 'winland-indicator.exe'
-}
-else {
-    $tfm          = 'net10.0-windows'
-    $envExe       = Join-Path $root "src\winland-env\bin\$Configuration\$tfm\winland-env.exe"
-    $keysExe      = Join-Path $root "src\winland-keys\bin\$Configuration\$tfm\winland-keys.exe"
-    $indicatorExe = Join-Path $root "src\winland-indicator\bin\$Configuration\$tfm\winland-indicator.exe"
-}
+$exe = if ($Dir) { Join-Path $Dir 'winland.exe' }
+       else { Join-Path $root "src\winland\bin\$Configuration\net10.0-windows\winland.exe" }
 
-# 1. Stop any previous instances FIRST — both so we don't double up (two keys daemons would
-#    double-fire every combo), and so a running process stops locking the DLLs we're about to rebuild.
-Get-Process -Name winland-env, winland-keys, winland-indicator -ErrorAction SilentlyContinue | Stop-Process -Force
+# 1. Stop Winland FIRST, so the rebuild below isn't blocked by locked DLLs. Its companions are listed
+#    too: a stopped (killed) Winland takes them down itself, but not one from before it started them —
+#    and winland-env is Winland's former name, from when every process was started on its own.
+Get-Process -Name winland, winland-keys, winland-indicator, winland-env -ErrorAction SilentlyContinue |
+    Stop-Process -Force
 Start-Sleep -Milliseconds 400  # give Windows a moment to release the file handles
 if ($Stop) {
-    Write-Host 'Stopped winland-env, winland-keys and winland-indicator.'
+    Write-Host 'Stopped Winland.'
     return
 }
 
-# 2. Build (source mode only). winland-keys' build also copies winlandctl.exe beside it.
+# 2. Build (source mode only).
 if (-not $Dir -and -not $NoBuild) {
     Write-Host "Building Winland ($Configuration)..."
-    dotnet build (Join-Path $root 'src\winland-keys\winland-keys.csproj') -c $Configuration --nologo
-    if ($LASTEXITCODE -ne 0) { Write-Error 'winland-keys build failed.'; return }
-    dotnet build (Join-Path $root 'src\winland-env\winland-env.csproj') -c $Configuration --nologo
-    if ($LASTEXITCODE -ne 0) { Write-Error 'winland-env build failed.'; return }
-    dotnet build (Join-Path $root 'src\winland-indicator\winland-indicator.csproj') -c $Configuration --nologo
-    if ($LASTEXITCODE -ne 0) { Write-Error 'winland-indicator build failed.'; return }
+    dotnet build (Join-Path $root 'src\winland\winland.csproj') -c $Configuration --nologo
+    if ($LASTEXITCODE -ne 0) { Write-Error 'Winland build failed.'; return }
 }
 
-# 3. Start the daemons. (Already elevated, so launching these admin-manifest exes does NOT prompt again.)
-foreach ($exe in @($envExe, $keysExe)) {
-    if (-not (Test-Path $exe)) {
-        Write-Error "Not found: $exe`nBuild first (run .\run.ps1) or pass -Dir <folder with the exes>."
-        return
-    }
+# 3. Start Winland; it starts its companions. (Already elevated, so its admin manifest doesn't prompt.)
+if (-not (Test-Path $exe)) {
+    Write-Error "Not found: $exe`nBuild first (run .\run.ps1) or pass -Dir <folder with winland.exe>."
+    return
 }
 
-$ctl = Join-Path (Split-Path $keysExe) 'winlandctl.exe'
-if (-not (Test-Path $ctl)) {
-    Write-Warning "winlandctl.exe is missing next to winland-keys.exe ($ctl). Super+number / focus binds will not work."
-}
-
-Start-Process -FilePath $envExe
-Start-Process -FilePath $keysExe
-
-# 4. The on-screen indicator. It does NOT require elevation — started from this elevated script it
-#    simply inherits it, which is harmless. Skipped when it isn't there (e.g. -Dir points at an
-#    older packaged folder).
-if (Test-Path $indicatorExe) {
-    Start-Process -FilePath $indicatorExe
-}
-else {
-    Write-Warning "Not found: $indicatorExe`nStarting without the on-screen workspace indicator."
-}
-
-Write-Host 'Started Winland (daemons elevated). Super+1..9 should switch workspaces now.'
+Start-Process -FilePath $exe
+Write-Host 'Started Winland. Super+1..9 should switch workspaces now.'

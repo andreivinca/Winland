@@ -15,11 +15,11 @@ internal sealed record MonitorInfo(string Device, Rectangle Work, int Dpi);
 
 /// <summary>
 /// Root of the indicator: one <see cref="IndicatorWindow"/> per monitor, kept in step with the display
-/// configuration, fed by winland-env's broadcast event pipe, and remembering where the user parked each
+/// configuration, fed by winland's broadcast event pipe, and remembering where the user parked each
 /// circle.
 ///
-/// It is a pure subscriber. It never sends the environment anything, and it runs unelevated — nothing
-/// it does needs administrator rights. When the environment is not running, the circles simply keep
+/// It is a pure subscriber. It never sends Winland anything, and it runs unelevated — nothing
+/// it does needs administrator rights. When Winland is not running, the circles simply keep
 /// showing the last state they knew.
 /// </summary>
 internal sealed class IndicatorApp : ApplicationContext
@@ -35,8 +35,8 @@ internal sealed class IndicatorApp : ApplicationContext
     private readonly EventClient _client;
     private readonly System.Windows.Forms.Timer _topmostHeartbeat; // a UI-thread timer, on purpose
 
-    // The last snapshot the environment sent, by device name. Monitors missing from it (a fresh
-    // display, or no environment yet) show the "no workspace" glyph.
+    // The last snapshot Winland sent, by device name. Monitors missing from it (a fresh
+    // display, or no Winland yet) show the "no workspace" glyph.
     private IReadOnlyDictionary<string, int> _workspaces = new Dictionary<string, int>();
 
     private bool _disposed;
@@ -192,7 +192,7 @@ internal sealed class IndicatorApp : ApplicationContext
 
     /// <summary>
     /// Enumerate live monitors left-to-right. We ask Win32 rather than WinForms' Screen so the device
-    /// names are exactly the ones winland-env keys its workspace state on (\\.\DISPLAYn), and we take
+    /// names are exactly the ones winland keys its workspace state on (\\.\DISPLAYn), and we take
     /// the WORK area so a circle never lands under the taskbar.
     /// </summary>
     private static List<MonitorInfo> EnumerateMonitors()

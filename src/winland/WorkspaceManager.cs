@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Per-monitor workspaces. Each workspace is pinned to a "home" monitor (the monitor it was first

@@ -6,7 +6,7 @@ using System.Linq;
 using System.Threading;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// The event-channel server: a broadcast-only named pipe (<see cref="Ipc.EventsPipeName"/>) that

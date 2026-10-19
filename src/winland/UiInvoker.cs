@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Marshals a string command from a background thread (the IPC server) onto the UI thread, where the
@@ -34,7 +34,7 @@ internal sealed class UiInvoker : NativeWindow, IDisposable
         {
             _input = command;
             // Kept only if the message is never handled (window already destroyed during shutdown).
-            _output = $"{Ipc.ErrPrefix} environment is shutting down";
+            _output = $"{Ipc.ErrPrefix} Winland is shutting down";
             SendMessage(Handle, WM_INVOKE, IntPtr.Zero, IntPtr.Zero); // synchronous: WndProc runs on the UI thread
             return _output;
         }

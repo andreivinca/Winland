@@ -2,10 +2,10 @@ using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
-/// The access-control list both of the environment's pipes are created with. The default DACL of a
+/// The access-control list both of Winland's pipes are created with. The default DACL of a
 /// pipe created by this elevated service rejects the user's own unelevated processes — which would
 /// force every winlandctl caller (helper scripts, terminals) to run elevated, and would leave the
 /// unelevated indicator unable to subscribe at all. Granting the logged-on user's SID full control

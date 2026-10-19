@@ -14,7 +14,7 @@ namespace Winland.Indicator;
 /// workspace glyph, drawn as a layered window so its antialiased rim blends with whatever is behind it.
 ///
 /// It is deliberately invisible to window management. The window has an EMPTY title and the
-/// WS_EX_TOOLWINDOW style, which is exactly what winland-env's "is this an app window" filter (and the
+/// WS_EX_TOOLWINDOW style, which is exactly what winland's "is this an app window" filter (and the
 /// show-desktop script) reject — so it is never minimized, moved or counted as a workspace member. It
 /// also carries WS_EX_NOACTIVATE, so clicking and dragging it never takes focus away from the app the
 /// user is working in, and is topmost so it stays visible above ordinary windows.
@@ -260,7 +260,7 @@ internal sealed class IndicatorWindow : Form
         using var disc = new SolidBrush(Color.FromArgb(CircleAlpha, Color.White));
         g.FillEllipse(disc, 0.5f, 0.5f, size - 1f, size - 1f); // inset so the antialiased rim isn't clipped
 
-        // Raw ids straight off the event pipe: int.MaxValue is winland-env's reserved scratchpad, and
+        // Raw ids straight off the event pipe: int.MaxValue is winland's reserved scratchpad, and
         // anything below 1 means the monitor is showing nothing.
         string text = _workspace == int.MaxValue ? "S"
             : _workspace >= 1 ? _workspace.ToString()

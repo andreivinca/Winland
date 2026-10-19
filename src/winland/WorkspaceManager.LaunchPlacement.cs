@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Launch placement: an app opened from a shortcut appears on the monitor under the mouse, as a tile of the

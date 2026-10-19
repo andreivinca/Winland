@@ -6,16 +6,16 @@ using Winland.Common;
 namespace Winland.Keys;
 
 /// <summary>
-/// Best-effort client for winland-env's control pipe, for requests the keys daemon makes itself rather
+/// Best-effort client for winland's control pipe, for requests the keys daemon makes itself rather
 /// than through a winlandctl process (which would add a process start to every app launch).
 /// </summary>
-internal sealed class EnvClient
+internal sealed class WinlandClient
 {
-    // Short: a launch must never wait long on an environment that is down or busy.
+    // Short: a launch must never wait long on a Winland that is down or busy.
     private const int ConnectTimeoutMs = 250;
     private static readonly TimeSpan ReplyTimeout = TimeSpan.FromSeconds(1);
 
-    /// <summary>Send one command line; true when winland-env replied OK.</summary>
+    /// <summary>Send one command line; true when winland replied OK.</summary>
     public bool TrySend(string command)
     {
         try
@@ -32,7 +32,7 @@ internal sealed class EnvClient
         }
         catch (TimeoutException)
         {
-            return false; // environment not running or busy — not worth a log line per launch
+            return false; // Winland not running or busy — not worth a log line per launch
         }
         catch (Exception ex)
         {

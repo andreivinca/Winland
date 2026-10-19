@@ -1,14 +1,14 @@
 using System;
 using Winland.Common;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
 /// Maps a control command ("workspace 1", "movetoworkspace 1", "link-here", "unlink", "toggle-float",
 /// "scratchpad",
 /// "workspace-release", "focus left", "move-window right", "focus-app firefox",
 /// "focus-web https://gemini.google.com", "close", "place-next-window") to the matching
-/// in-process operation. The single source of truth for what the environment can do; reached from the
+/// in-process operation. The single source of truth for what Winland can do; reached from the
 /// IPC server today (and any other front door later). <see cref="Execute"/> runs on the UI thread.
 ///
 /// Commands that deliberately focus or move a window run through <see cref="FollowedByCursor{T}"/>, so

@@ -6,9 +6,9 @@ Provide deterministic, per-monitor workspace management where each monitor displ
 a time: switching puts away everything on the monitor and lays out the incoming workspace's tiles.
 (How tiles are arranged: `tiling.md`.)
 
-Workspaces live in the **`winland-env`** service. They are driven over the control pipe: the
+Workspaces live in the **`winland`** service. They are driven over the control pipe: the
 `winland-keys` daemon runs the bind `winlandctl workspace N`, `winlandctl` forwards `workspace N` to
-`winland-env`, and the `Dispatcher` calls into `WorkspaceManager`. The keys daemon itself has no
+`winland`, and the `Dispatcher` calls into `WorkspaceManager`. The keys daemon itself has no
 workspace logic. (See `architecture-overview.md`.)
 
 ## 2. Membership Model (the core rule)

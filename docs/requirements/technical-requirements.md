@@ -4,41 +4,51 @@
 
 - Language/runtime: C# on `.NET 10`.
 - Target frameworks:
-  - `winland-keys`, `winland-env`, `winland-indicator`: `net10.0-windows` (WinForms
+  - `winland-keys`, `winland`, `winland-indicator`: `net10.0-windows` (WinForms
     `ApplicationContext`; `NotifyIcon` for the tray, layered `Form`s for the indicator).
   - `winlandctl`: `net10.0` (console).
   - `Winland.Common`: `net10.0` shared library, referenced by all of them.
 - OS dependency: Windows (Win32 APIs via P/Invoke).
-- Process model: **four executables** — a hotkey daemon (`winland-keys`), an environment service
-  (`winland-env`), a control CLI (`winlandctl`), and an on-screen indicator (`winland-indicator`).
-  The first two run elevated; the indicator must run unelevated. See `architecture-overview.md`.
+- Process model: **one app the user starts, `winland`**, which starts and ends two companion
+  executables — a hotkey daemon (`winland-keys`) and an on-screen indicator (`winland-indicator`) —
+  plus a control CLI (`winlandctl`). `winland` and `winland-keys` run elevated; the indicator runs
+  unelevated. See `architecture-overview.md` §1.2.
 
 ## 2. Build and Packaging Requirements
 
-- Output types: `WinExe` for the two daemons and the indicator, `Exe` for `winlandctl`.
-- Each daemon has an `app.manifest` requesting administrator elevation. `winland-indicator`
-  deliberately has **none** (asInvoker), and sets `ApplicationHighDpiMode = PerMonitorV2`.
+- Output types: `WinExe` for `winland` and both companions, `Exe` for `winlandctl`.
+- `winland` and `winland-keys` have an `app.manifest` requesting administrator elevation.
+  `winland-indicator` deliberately has **none** (asInvoker), and sets
+  `ApplicationHighDpiMode = PerMonitorV2` (so does `winland`).
 - `winland-keys` copies to its output (`PreserveNewest`): `config.conf`, `launch-or-focus.ps1`,
   `launch-web.ps1`, `launch-or-focus-web.ps1`, `show-desktop.ps1`.
 - **`winland-keys` must place `winlandctl.exe` (plus its `.dll`, `.runtimeconfig.json`,
   `.deps.json`) next to `winland-keys.exe`** — the keys daemon resolves `winlandctl` as a sibling
   exe. This is done by a build target (`CopyWinlandctl`) in `winland-keys.csproj`; without it, every
   `winlandctl …` bind (workspaces, focus, close, release) silently no-ops.
-- Start/packaging scripts (tracked in `packaging/`, copied into the assembled `dist/`):
-  - `start-winland.ps1` / `start-winland.cmd` — start both daemons elevated (one UAC prompt), plus
-    `winland-indicator.exe` **if present** (so folders packaged before it existed still work).
-  - `install-autostart.ps1` — register logon Scheduled Tasks: the daemons at `-RunLevel Highest`,
-    `Winland Indicator` at `-RunLevel Limited`.
-  - `run.ps1` (repo root) — developer launcher: stop → build → start from source (all three).
-  - All three scripts stop `winland-env`, `winland-keys` and `winland-indicator`.
+- **`winland`'s build must place both companions next to `winland.exe`** — `Companions` starts them
+  from its own folder. The companions are `ProjectReference`s with `ReferenceOutputAssembly=false`
+  (built first, no code dependency); the `CopyCompanions` target copies each one's whole output there
+  (so `winlandctl`, `config.conf` and the helper scripts come along), leaving out files a run left
+  behind (`winland-hooklog.txt*`, `winland-indicator-dock.txt`). Skipped for RID builds:
+  `publish-dist.ps1` publishes each project into `dist/` itself.
+- Scripts:
+  - `install-autostart.ps1` (tracked in `packaging/`, copied into the assembled `dist/`) — register
+    one logon Scheduled Task, `Winland`, running `winland.exe` at `-RunLevel Highest`; removes the
+    per-process tasks earlier versions registered.
+  - `run.ps1` (repo root) — developer launcher: stop → build `src/winland` → start `winland.exe`.
+  - `publish-dist.ps1` (repo root) — assemble a self-contained `dist/`.
+  - `run.ps1` and `publish-dist.ps1` stop `winland`, `winland-keys`, `winland-indicator` and
+    `winland-env` (Winland's former name).
 
 ## 3. Core Technical Architecture
 
 - **`winland-keys`** — `Program.Main` (single-instance mutex) runs `KeysApp`, which composes
-  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher` + `UnelevatedLauncher`, and
+  `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher` + `UnelevatedLauncher` (from
+  `Winland.Common`), and
   `WindowsHotkeyDisabler`. It owns the only keyboard hook and has no workspace/focus logic. Binds
   are parsed before the hook is installed (the hook thread resolves combos from the moment it is live).
-- **`winland-env`** — `Program.Main` runs `EnvApp`, which composes `WorkspaceManager`,
+- **`winland`** — `Program.Main` runs `WinlandApp`, which composes `WorkspaceManager`,
   `WindowNavigator` (static), `Dispatcher`, `UiInvoker`, `DispatchServer`, `EventServer`, and
   `TrayIcon`. It has no keyboard hook; all actions arrive on the control pipe. Both pipes are created
   with the shared ACL from `PipeAcl.ForCurrentUser()`.
@@ -77,7 +87,7 @@
   - `Win+Shift+W` → `winlandctl workspace-release`
   - `Win+Left/Up/Right/Down` → `winlandctl focus <dir>`
   - `Win+W` → `winlandctl close`
-- The window-management behavior therefore lives in `winland-env`, reached via `winlandctl`.
+- The window-management behavior therefore lives in `winland`, reached via `winlandctl`.
 
 ### 4.5 Bind Matching
 - At key-down with Win held, build the modifier bitmask from physical Shift/Alt/Ctrl state and match
@@ -86,17 +96,17 @@
 
 ## 5. IPC Requirements
 
-`winland-env` serves two independent local named pipes: a request/response **command** channel and a
+`winland` serves two independent local named pipes: a request/response **command** channel and a
 broadcast-only **event** channel. Commands never travel on the event pipe and state is never returned
 on the command pipe.
 
 ### 5.1 Transport
-- A local named pipe, `\\.\pipe\winland-env` (`Ipc.PipeName`). `winland-env` is the server,
+- A local named pipe, `\\.\pipe\winland` (`Ipc.PipeName`). `winland` is the server,
   `winlandctl` the client.
 - Line-based protocol: the client writes one command line; the server replies with a single line —
   `OK` (`Ipc.Ok`) on success, or `ERR <message>` (`Ipc.ErrPrefix`) on failure.
 
-### 5.2 Server (`winland-env`)
+### 5.2 Server (`winland`)
 - `DispatchServer` listens on a background thread; each connection carries exactly one command.
 - The pipe carries an explicit ACL granting the logged-on user's processes access (elevated or not),
   so unelevated scripts/terminals can use `winlandctl`. Trade-off: any same-user process can drive
@@ -117,13 +127,13 @@ on the command pipe.
 
 ### 5.4 Client (`winlandctl`)
 - Joins args into one command line, connects with a 2s timeout, writes the line, reads one reply
-  (10s timeout, so a wedged environment cannot strand client processes).
+  (10s timeout, so a wedged Winland cannot strand client processes).
 - Exit codes: `0` OK · `1` env replied `ERR`/no reply · `2` bad usage · `3` could not reach env.
 
 ### 5.5 Event Channel (`Ipc.EventsPipeName`)
-- Transport: a local named pipe, `\\.\pipe\winland-env-events`, `PipeDirection.Out`, byte mode,
+- Transport: a local named pipe, `\\.\pipe\winland-events`, `PipeDirection.Out`, byte mode,
   asynchronous, several server instances (8), created with the same user ACL so unelevated
-  subscribers can attach. `winland-env` is the server; `winland-indicator` is the client.
+  subscribers can attach. `winland` is the server; `winland-indicator` is the client.
 - Message grammar: one line per snapshot — space-separated `<device>=<workspace>` pairs, ordered
   left-to-right, e.g. `\\.\DISPLAY1=3 \\.\DISPLAY2=5`. The device is the stable GDI display name
   (contains no space); the workspace is the raw int: `0` = the monitor shows no workspace,
@@ -134,12 +144,12 @@ on the command pipe.
   subscriber that disconnected while idle is detected and its pipe instance freed.
 - `EventServer.Publish` is called on the UI thread and must never block: it stores the newest line and
   wakes per-subscriber writer threads. Dead or stalled subscribers are dropped silently and can never
-  hold up the environment.
+  hold up Winland.
 - Client contract (`EventClient`): a background thread reconnects forever (~2 s between attempts) when
-  the environment is not running or restarts; the last known state stays on screen throughout, and
+  Winland is not running or restarts; the last known state stays on screen throughout, and
   only successful subscriptions are logged.
 
-## 6. Workspace System Requirements (`winland-env`)
+## 6. Workspace System Requirements (`winland`)
 
 ### 6.1 Workspace Domain Model
 - No fixed workspace count — any whole number >= 1. The shipped config binds 1..9 and 11..19, but a
@@ -194,7 +204,7 @@ on the command pipe.
 - Per workspace, one row of full-height columns across the work area with a gap of 8 px (96 DPI).
   Tiles share the width while each stays >= 560 px (96 DPI); beyond that columns keep the width of a
   full view and the row scrolls by whole tiles. Both values scale with the monitor's effective DPI;
-  `winland-env` is per-monitor-v2 DPI aware.
+  `winland` is per-monitor-v2 DPI aware.
 - Tiles outside the view are minimized, never positioned outside their monitor's work area.
 - Hung windows (`IsHungAppWindow`) are skipped by layout.
 
@@ -208,7 +218,7 @@ on the command pipe.
   name + shown workspace, ordered left-to-right); `EventServer` subscribes. Monitors that are not
   enumerating (asleep) are absent from the snapshot.
 
-## 7. Window Focus Requirements (`winland-env`)
+## 7. Window Focus Requirements (`winland`)
 
 ### 7.1 Candidate Filtering
 A directional-focus candidate must be: visible; not the current window; not minimized; not the
@@ -270,7 +280,7 @@ Z-order predecessors; not minimized per its window placement.
 
 ## 9. Tray and UX Integration Requirements
 
-- `winland-env` keeps a tray icon for its lifetime (primary monitor's taskbar): a static Winland
+- `winland` keeps a tray icon for its lifetime (primary monitor's taskbar): a static Winland
   badge; menu: Status, Exit. Workspace numbers are shown by the indicator circles, not the tray.
 - `winland-keys` is headless: no tray icon, menu, or balloons; startup status is written to the log.
   Config changes are applied by restarting the daemon.
@@ -302,7 +312,7 @@ Z-order predecessors; not minimized per its window placement.
 
 **Windowing and elevation**
 - Single instance (`Local\winland-indicator`), unelevated, no taskbar button and no Alt-Tab entry.
-- Windows carry an **empty title** and `WS_EX_TOOLWINDOW`, which is exactly what `winland-env`'s
+- Windows carry an **empty title** and `WS_EX_TOOLWINDOW`, which is exactly what `winland`'s
   managed-window filter and `show-desktop.ps1` reject — so the circles are never minimized, moved, or
   treated as workspace members. `WS_EX_NOACTIVATE` keeps clicks and drags from stealing focus;
   `WS_EX_TOPMOST` keeps them visible.
@@ -311,18 +321,18 @@ Z-order predecessors; not minimized per its window placement.
 - Per-monitor-v2 DPI awareness; circle size, margin and dock threshold are scaled by each monitor's
   own DPI (`GetDpiForMonitor`).
 - Monitors are enumerated with `EnumDisplayMonitors` + `GetMonitorInfo` (MONITORINFOEX) so device
-  names match `winland-env`'s, and `SystemEvents.DisplaySettingsChanged` re-syncs the window set
+  names match `winland`'s, and `SystemEvents.DisplaySettingsChanged` re-syncs the window set
   (create / dispose / re-place) on the UI thread.
 - A future right-click context menu is an explicit extension point: one more case in
   `IndicatorWindow.WndProc`.
 
 ## 10. Elevation and Windows Shell Hotkey Conflict Requirements
 
-- Both daemons run elevated (UIPI: a medium-integrity hook can't see input bound for elevated
-  windows, and `winland-env` couldn't minimize/restore/focus elevated windows otherwise).
-- Elevation stops at the daemons: apps launched from binds get the user's normal token
+- `winland` and `winland-keys` run elevated (UIPI: a medium-integrity hook can't see input bound for
+  elevated windows, and `winland` couldn't minimize/restore/focus elevated windows otherwise).
+- Elevation stops there: apps launched from binds get the user's normal token
   (`UnelevatedLauncher`), the pipe ACL admits unelevated `winlandctl` callers, and
-  `winland-indicator` runs unelevated by construction (no manifest, `-RunLevel Limited` at logon).
+  `winland-indicator` runs unelevated (no manifest; `Companions` starts it with the shell's token).
 - `winland-keys` disables native Win-key hotkeys via the `NoWinKeys` policy (notably Win+number
   taskbar launch). On a policy change it restarts Explorer to apply immediately — asking it to exit
   cleanly first, killing only as fallback, and relying on Windows' `AutoRestartShell` to bring it
@@ -334,16 +344,21 @@ Z-order predecessors; not minimized per its window placement.
 
 - Keep heavy work out of the hook callback; dispatch actions to the keys UI thread via a message
   window.
-- Marshal pipe commands to the env UI thread before touching window state.
+- Marshal pipe commands to Winland's UI thread before touching window state.
+- Companions end with Winland, however it ends: each lives in its own kill-on-close job object held
+  only by `winland` (`Companions`, `KillOnCloseJob`); one that can't join its job is ended at once.
+  Their own children (apps launched by binds) break away from the jobs silently and never end with
+  Winland.
 - I/O, process-launch, and broken-pipe failures are caught and ignored where designed.
 - Logging is best-effort only and must never block feature behavior.
 
 ## 12. Observability Requirements
 
 - Diagnostic log file: `winland-hooklog.txt` next to each executable (`Winland.Common.Log`), each
-  line stamped with time and process name (the daemons share the file when co-located); rotated to a
+  line stamped with time and process name (Winland and its companions share the one file next to
+  `winland.exe`); rotated to a
   single `.old` generation past ~1 MB.
-- `winland-env` logs workspace transitions and focus actions; `winland-keys`/`HotkeyConfig` logs
+- `winland` logs workspace transitions and focus actions; `winland-keys`/`HotkeyConfig` logs
   startup status and ignored binds; `winland-indicator` logs its monitor count at startup and each
   successful (re)subscription to the event pipe — never its retries.
 

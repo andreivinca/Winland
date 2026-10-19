@@ -6,8 +6,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Deliberately no ApplicationManifest: unlike the two daemons the indicator runs asInvoker.
-         It only reads workspace state off a pipe and draws, so it never needs administrator rights. -->
+    <!-- Deliberately no ApplicationManifest: unlike winland and winland-keys the indicator runs asInvoker,
+         and Winland starts it with the user's normal token. It only reads workspace state off a pipe and
+         draws, so it never needs administrator rights. -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>winland-indicator</AssemblyName>
     <Version>0.4.0</Version>

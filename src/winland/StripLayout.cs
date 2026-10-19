@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>A screen rectangle in physical pixels; <see cref="Right"/> and <see cref="Bottom"/> are exclusive.</summary>
 internal readonly record struct TileRect(int Left, int Top, int Right, int Bottom)

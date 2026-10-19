@@ -23,10 +23,10 @@ This folder contains the baseline project documentation for future contributors 
 
 ## Scope
 
-These documents describe the current implementation: **four cooperating processes** under `src/`
-(`winland-keys`, `winland-env`, `winlandctl`, `winland-indicator`) plus the shared `Winland.Common`
-library. The two daemons and the indicator target `net10.0-windows` (WinForms + Win32 interop);
-`winlandctl` targets `net10.0`.
+These documents describe the current implementation under `src/`: the main app `winland`, its two
+companion processes (`winland-keys`, `winland-indicator`), the `winlandctl` CLI, and the shared
+`Winland.Common` library. `winland` and the companions target `net10.0-windows` (WinForms + Win32
+interop); `winlandctl` targets `net10.0`.
 
 ## Source of Truth
 
@@ -39,8 +39,8 @@ Primary implementation references:
 - `src/winland-keys/config.conf` — shipped shortcut bindings
 - `src/Winland.Common/Ipc.cs` — control- and event-pipe protocols (shared)
 - `src/winlandctl/Program.cs` — the control CLI
-- `src/winland-env/EnvApp.cs`, `DispatchServer.cs`, `UiInvoker.cs`, `Dispatcher.cs` — pipe-driven service
-- `src/winland-env/EventServer.cs`, `PipeAcl.cs` — workspace-state broadcast
-- `src/winland-env/WorkspaceManager.cs` — per-monitor workspaces
-- `src/winland-env/WindowNavigator.cs` — directional focus + close
+- `src/winland/WinlandApp.cs`, `DispatchServer.cs`, `UiInvoker.cs`, `Dispatcher.cs` — pipe-driven service
+- `src/winland/EventServer.cs`, `PipeAcl.cs` — workspace-state broadcast
+- `src/winland/WorkspaceManager.cs` — per-monitor workspaces
+- `src/winland/WindowNavigator.cs` — directional focus + close
 - `src/winland-indicator/IndicatorApp.cs`, `IndicatorWindow.cs`, `EventClient.cs` — on-screen circles

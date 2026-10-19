@@ -5,8 +5,8 @@
 Provide directional, spatial window navigation on top-level app windows, focus-by-process for the
 launch-or-focus binds, and quick close of the foreground window.
 
-The navigator lives in **`winland-env`** (`WindowNavigator`) and is reached over the control pipe:
-`winland-keys` runs `winlandctl focus <dir>` / `winlandctl close` / …, and `winland-env`'s
+The navigator lives in **`winland`** (`WindowNavigator`) and is reached over the control pipe:
+`winland-keys` runs `winlandctl focus <dir>` / `winlandctl close` / …, and `winland`'s
 `Dispatcher` calls `WindowNavigator`.
 
 ## 2. Hotkeys
@@ -64,7 +64,7 @@ Selection rule:
 - On best candidate found:
   - Log process name best-effort.
   - Bring it to the foreground with the same foreground-lock-timeout suppression `focus-app` and the
-    workspace engine use (a plain `SetForegroundWindow` is refused because `winland-env` never owns
+    workspace engine use (a plain `SetForegroundWindow` is refused because `winland` never owns
     the input).
 - The `Dispatcher` then moves the mouse to the newly focused window (§3.6).
 

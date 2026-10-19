@@ -7,13 +7,13 @@ namespace Winland.Keys;
 /// <summary>
 /// Root of the keys daemon: a headless (no tray icon) hotkey mapper. It owns the keyboard hook and the
 /// config, and does nothing more than run each configured Super (Win) combo's command line (via
-/// AppLauncher). It has no workspace or focus logic — those live in winland-env, driven through
-/// winlandctl. It shows no UI; stop it with the start script (start-winland -Stop) or Task Manager.
+/// AppLauncher). It has no workspace or focus logic — those live in winland, driven through
+/// winlandctl. It shows no UI; Winland starts it and ends it when Winland exits.
 /// </summary>
 internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
 {
     private readonly KeyboardHook _hook;
-    private readonly AppLauncher _launcher = new(new EnvClient());
+    private readonly AppLauncher _launcher = new(new WinlandClient());
     private readonly IReadOnlyList<KeyBind> _binds;
     private bool _disposed;
 

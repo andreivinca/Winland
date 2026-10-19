@@ -1,15 +1,16 @@
 using System;
 using System.Windows.Forms;
 
-namespace Winland.Env;
+namespace Winland;
 
 /// <summary>
-/// Root of the environment service (the "window manager"): owns the workspace engine, the numbered tray
-/// icon, the control-channel server, and the event-channel server that broadcasts workspace state to
-/// on-screen subscribers. It has no keyboard hook — it is driven entirely by commands arriving over the
-/// control pipe (from winlandctl), which the keys daemon triggers.
+/// Root of Winland, the main app: owns the workspace engine (the "window manager"), the tray icon, the
+/// control-channel server, the event-channel server that broadcasts workspace state to on-screen
+/// subscribers, and the companion processes (the keyboard hook and the indicator). It has no keyboard
+/// hook itself — it is driven entirely by commands arriving over the control pipe (from winlandctl),
+/// which the keys companion triggers. Exiting it (tray → Exit) ends the companions too.
 /// </summary>
-internal sealed class EnvApp : ApplicationContext
+internal sealed class WinlandApp : ApplicationContext
 {
     private readonly WorkspaceManager _workspaces;
     private readonly Dispatcher _dispatcher;
@@ -17,9 +18,10 @@ internal sealed class EnvApp : ApplicationContext
     private readonly DispatchServer _server;
     private readonly EventServer _events;
     private readonly TrayIcon _tray;
+    private readonly Companions _companions;
     private bool _disposed;
 
-    public EnvApp()
+    public WinlandApp()
     {
         _workspaces = new WorkspaceManager();
         _dispatcher = new Dispatcher(_workspaces);
@@ -38,11 +40,16 @@ internal sealed class EnvApp : ApplicationContext
         _workspaces.WorkspacesChanged += _events.Publish;
         _events.Publish(_workspaces.WorkspaceSnapshot);
 
-        _tray.ShowBalloon("Environment running. Control it with: winlandctl workspace 1");
+        // Last, so both pipes are already listening when the companions connect to them.
+        _companions = new Companions();
+        _companions.StartAll();
+
+        _tray.ShowBalloon("Winland is running.");
     }
 
     private string BuildStatusText() =>
-        "Winland environment is running.\n\n" +
+        "Winland is running, with winland-keys (the shortcuts) and winland-indicator (the workspace\n" +
+        "circles). Exit ends all three.\n\n" +
         "Driven by winlandctl over the control pipe:\n" +
         "  winlandctl workspace <n>          (any whole number >= 1)\n" +
         "  winlandctl movetoworkspace <n>    move the focused window to n (as a tile)\n" +
@@ -71,6 +78,7 @@ internal sealed class EnvApp : ApplicationContext
         if (disposing && !_disposed)
         {
             _disposed = true;
+            _companions.Dispose(); // first: the keys companion stops sending commands
             _server.Dispose();
             _events.Dispose();
             _invoker.Dispose();

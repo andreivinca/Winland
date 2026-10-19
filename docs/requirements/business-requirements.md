@@ -9,11 +9,11 @@ Winland provides keyboard-first desktop productivity on Windows through three co
 
 The product goal is to deliver Hyprland/Omarchy-style workflow ergonomics on Windows while remaining lightweight, tray-resident, and fast to use.
 
-Implementation note: Winland is delivered as four cooperating processes — `winland-keys` (the
-hotkey daemon), `winland-env` (the window-manager service), `winlandctl` (a control CLI), and
-`winland-indicator` (the on-screen workspace circles). This is an architectural detail, not a product
-feature; the requirements below describe user-facing behavior regardless of process boundaries. See
-`architecture-overview.md`.
+Implementation note: Winland is one app, `winland` (the window manager), which runs two companion
+processes — `winland-keys` (the hotkey daemon) and `winland-indicator` (the on-screen workspace
+circles) — and ends them when it exits; `winlandctl` is a control CLI. This is an architectural detail,
+not a product feature; the requirements below describe user-facing behavior regardless of process
+boundaries. See `architecture-overview.md`.
 
 ## 2. Product Vision
 
@@ -82,22 +82,24 @@ Primary users:
 ## 6. User Experience Requirements
 
 ### 6.1 Startup & Presence
-- `winland-env` starts as a tray application (icon on the primary taskbar); `winland-keys` runs
-  headless (no tray icon or balloons). The start script (`start-winland`) launches both with a
-  single elevation prompt.
-- `winland-keys` logs its startup status (hook installed / failed); `winland-env` shows a control-
-  channel balloon.
-- The `winland-env` tray icon is a static Winland badge; the active workspace of every monitor is
+- The user starts one program, `winland` — a tray application (icon on the primary taskbar) — with a
+  single elevation prompt (none at logon with the auto-start task). It starts `winland-keys`, which
+  runs headless (no tray icon or balloons), and `winland-indicator`.
+- Exiting Winland from its tray menu ends its companion processes too — as does Winland ending any
+  other way.
+- `winland-keys` logs its startup status (hook installed / failed); `winland` shows a "running"
+  balloon.
+- The `winland` tray icon is a static Winland badge; the active workspace of every monitor is
   shown by the on-screen indicator circles (`winland-indicator`).
 
 ### 6.2 Discoverability
-- The `winland-env` tray menu must expose:
+- The `winland` tray menu must expose:
   - Status
   - Exit
 
 ### 6.3 Configurability
 - Non-developer users can edit shortcuts by modifying `config.conf`.
-- Config is read at startup; restarting the keys daemon (via the start script) applies new binds.
+- Config is read at startup; restarting Winland applies new binds.
 
 ### 6.4 Stability Expectations
 - Failures in launching apps/scripts or logging should not crash app.

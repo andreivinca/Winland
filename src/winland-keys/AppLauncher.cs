@@ -12,10 +12,10 @@ namespace Winland.Keys;
 ///
 /// Scripts and shell commands are launchers for the user's apps, so they run with the user's NORMAL
 /// token (via <see cref="UnelevatedLauncher"/>) — otherwise everything a bind starts would inherit this
-/// daemon's elevation. Window management needs no elevation here: it lives in winland-env, reached
+/// daemon's elevation. Window management needs no elevation here: it lives in winland, reached
 /// through the sibling winlandctl.exe (which the pipe accepts from unelevated callers too).
 ///
-/// Before a shell command runs, winland-env is asked to place the next new window on the monitor under
+/// Before a shell command runs, winland is asked to place the next new window on the monitor under
 /// the mouse. Scripts do that themselves when they actually launch something (launch-or-focus only
 /// launches when it found nothing to focus).
 /// </summary>
@@ -23,9 +23,9 @@ internal sealed class AppLauncher
 {
     private const string PlaceNextWindowCommand = "place-next-window";
 
-    private readonly EnvClient _env;
+    private readonly WinlandClient _env;
 
-    public AppLauncher(EnvClient env)
+    public AppLauncher(WinlandClient env)
     {
         _env = env;
     }

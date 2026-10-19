@@ -28,7 +28,7 @@ function Resolve-Browser {
     return 'chrome' # last resort: PATH / App Paths
 }
 
-# Ask winland-env (via winlandctl, next to this script) to open the window on the monitor under the mouse.
+# Ask winland (via winlandctl, next to this script) to open the window on the monitor under the mouse.
 $ctl = Join-Path $PSScriptRoot 'winlandctl.exe'
 if (Test-Path $ctl) {
     & $ctl place-next-window 2>$null | Out-Null

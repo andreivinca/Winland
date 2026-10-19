@@ -5,8 +5,8 @@ per-monitor workspaces you switch with `Win`+a number, opt-in **scrolling tiling
 put in them, directional focus, and app launching — all from the keyboard, all configurable. Windows you
 don't tile keep behaving like normal Windows windows.
 
-It's a tiny .NET 10 tray utility (actually four small cooperating processes — see
-[Architecture](#architecture)). When it isn't running, your keyboard behaves completely normally.
+It's a tiny .NET 10 tray app, `winland.exe`, which runs two small helper processes of its own — see
+[Architecture](#architecture). When it isn't running, your keyboard behaves completely normally.
 
 ---
 
@@ -15,15 +15,14 @@ It's a tiny .NET 10 tray utility (actually four small cooperating processes — 
 Winland runs from a self-contained folder (`dist/`) that holds the executables, the config file, and
 the helper scripts.
 
-1. **Start it:** double-click **`start-winland.cmd`** (or run
-   `powershell -ExecutionPolicy Bypass -File .\start-winland.ps1`).
-2. Accept the **single UAC prompt** — Winland must run elevated (explained
+1. **Start it:** double-click **`winland.exe`**.
+2. Accept the **UAC prompt** — Winland must run elevated (explained
    [below](#why-it-needs-administrator)).
 3. A small **Winland icon** appears in the system tray, and a **translucent circle** appears
    on each monitor showing that monitor's workspace. You're running.
 
-To stop it: `start-winland.ps1 -Stop` (or the `run.ps1 -Stop` dev script). To start it automatically
-at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-logon).
+To stop it: right-click the tray icon → **Exit** (this also ends its helper processes). To start it
+automatically at every logon without a UAC prompt, see [Auto-start at logon](#auto-start-at-logon).
 
 > Running from source instead? Use `.\run.ps1` (builds and launches). See [Building](#building).
 
@@ -163,8 +162,8 @@ scratchpad is shown and press `Win+Space`.
 All shortcuts live in **`config.conf`**, a plain text file sitting next to `winland-keys.exe` (in the
 `dist/` folder). Edit it with any text editor.
 
-**To apply changes, restart the keys daemon** — re-run `start-winland.ps1` (it stops the old instance
-first). Config is read once at startup.
+**To apply changes, restart Winland** (tray icon → Exit, then start `winland.exe` again — or re-run
+`run.ps1`). Config is read once, when the keys helper starts.
 
 ### Bind syntax
 
@@ -269,7 +268,7 @@ bind = SUPER D, show-desktop
 
 Winland puts a small **translucent white circle on every monitor** showing the
 workspace that monitor is currently displaying — the number, `S` for the scratchpad, or `–` when the
-monitor shows no workspace. It updates the moment a workspace changes: `winland-env` broadcasts the
+monitor shows no workspace. It updates the moment a workspace changes: `winland` broadcasts the
 new state and each circle redraws.
 
 **Move it wherever you like.** Drag a circle with the left mouse button:
@@ -283,48 +282,50 @@ Where you park each circle is remembered between runs (in `winland-indicator-doc
 exe, per monitor).
 
 The circles come from `winland-indicator.exe`, which runs **unelevated** and only ever *reads*
-workspace state. If it isn't running — or `winland-env` isn't — everything else works exactly as
+workspace state. If it isn't running — or `winland` isn't — everything else works exactly as
 before.
 
 ---
 
 ## Architecture
 
-Winland is **four cooperating processes**, not one app:
+Winland is **one app you start, `winland.exe`, which runs two helper processes** (its *companions*)
+and ends them when it exits. Plus a CLI any tool can call:
 
 | Executable | Role | Keyboard hook? |
 | --- | --- | --- |
-| **`winland-keys.exe`** | Hotkey daemon. Owns one global low-level keyboard hook; on each Super (Win) combo it runs that combo's configured command. Elevated. | ✅ the only one |
-| **`winland-env.exe`** | Environment service ("window manager"): per-monitor workspaces, directional focus, and the tray icon. Driven entirely over a control pipe. Elevated. | ❌ none |
-| **`winlandctl.exe`** | Tiny CLI that forwards one command to `winland-env` over a named pipe and exits. | ❌ none |
-| **`winland-indicator.exe`** | The per-monitor workspace circles. Subscribes to `winland-env`'s broadcast event pipe and draws; sends nothing back. Runs **unelevated**. | ❌ none |
+| **`winland.exe`** | The main app: the "window manager" (per-monitor workspaces, tiling, directional focus) and the tray icon, driven entirely over a control pipe. Starts the two companions below and ends them when it exits. Elevated. | ❌ none |
+| **`winland-keys.exe`** | Companion: the hotkey daemon. Owns one global low-level keyboard hook; on each Super (Win) combo it runs that combo's configured command. Runs with Winland's (elevated) rights. | ✅ the only one |
+| **`winland-indicator.exe`** | Companion: the per-monitor workspace circles. Subscribes to Winland's broadcast event pipe and draws; sends nothing back. Runs **unelevated**. | ❌ none |
+| **`winlandctl.exe`** | Tiny CLI that forwards one command to Winland over a named pipe and exits. | ❌ none |
 
 The flow that ties them together:
 
 ```
-Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  pipe  →  winland-env  →  switches workspace
+Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  pipe  →  winland  →  switches workspace
 ```
 
-Why split it up? Each part has one job: the hook lives in a tiny, rarely-changing process (so
-restarting the window manager doesn't break your hotkeys, and vice-versa); the environment is a
-**scriptable control surface** any tool can drive via `winlandctl`; and the keys daemon stays dumb —
-it only maps a combo to a command line. The cost is that **both daemons must run**, and
-`winlandctl.exe` must sit next to `winland-keys.exe` (the start scripts handle this).
+Why split it up? Each part has one job: the hook lives in a tiny, rarely-changing process; the window
+manager is a **scriptable control surface** any tool can drive via `winlandctl`; the keys daemon stays
+dumb — it only maps a combo to a command line; and the indicator, a UI you click and drag, runs
+without administrator rights. Starting and ending the companions is Winland's job alone
+(`Companions.cs`): they are put in a Windows job object that ends them whenever Winland ends — Exit,
+a crash, or Task Manager — while the apps you launch from shortcuts are kept out of it.
 
-`winland-keys` is **headless** (no window, no tray icon). Only `winland-env` has a tray icon, on the
-primary monitor's taskbar — a static Winland badge; right-click it for Status / Exit. Workspace
-numbers are shown by `winland-indicator`'s floating circles on every monitor. (Windows 11 doesn't
-let apps put custom widgets on taskbars, which is why the indicator floats instead.)
+Only `winland` has a tray icon, on the primary monitor's taskbar — a static Winland badge; right-click
+it for Status / Exit. Workspace numbers are shown by `winland-indicator`'s floating circles on every
+monitor. (Windows 11 doesn't let apps put custom widgets on taskbars, which is why the indicator
+floats instead.)
 
 ---
 
 ## Why it needs Administrator
 
-Winland's daemons run **elevated**, for two reasons:
+Winland and its keys helper run **elevated**, for two reasons:
 
 1. **Hotkeys over elevated windows.** A normal (medium-integrity) keyboard hook can't intercept input
    destined for an elevated window. If you run, say, Visual Studio as Administrator, `Win+3` would
-   otherwise fall through to it as a literal "3". Likewise, `winland-env` can only minimize/restore/
+   otherwise fall through to it as a literal "3". Likewise, `winland` can only minimize/restore/
    focus elevated windows because it is elevated itself.
 2. **Reclaiming `Win`+`<number>`.** By default Windows uses `Win`+`<number>` to launch pinned taskbar
    apps. On startup `winland-keys` sets the **`NoWinKeys`** policy
@@ -352,26 +353,27 @@ dotnet build Winland.slnx -c Debug
 dotnet test Winland.slnx          # unit tests (tiling layout and order)
 ```
 
-Building `winland-keys` also copies `winlandctl.exe` next to it, so the keys daemon can find it when
-run from its build folder. The simplest way to launch from source is the dev script:
+Building `winland` also builds its companions and puts them — with `winlandctl.exe`, `config.conf` and
+the helper scripts — next to `winland.exe`, so its build folder runs as is. The simplest way to launch
+from source is the dev script:
 
 ```powershell
-.\run.ps1              # stop old → build (Debug) → start everything (one UAC prompt)
-.\run.ps1 -Dir .\dist  # skip the build, run the pre-built exes in dist
+.\run.ps1              # stop Winland → build (Debug) → start winland.exe (one UAC prompt)
+.\run.ps1 -Dir .\dist  # skip the build, run the pre-built winland.exe in dist
 .\run.ps1 -NoBuild     # start whatever is already built
-.\run.ps1 -Stop        # stop all Winland processes
+.\run.ps1 -Stop        # stop Winland
 ```
 
-It stops running daemons **before** building (a running daemon locks its own DLLs), so a rebuild never
-fails on a locked file.
+It stops Winland **before** building (a running process locks its own DLLs), so a rebuild never fails
+on a locked file. `publish-dist.ps1` assembles a self-contained `dist/` folder.
 
 ### Auto-start at logon
 
-To start Winland at every sign-in without a UAC prompt (registers one Scheduled Task per process — the
-two daemons with highest privileges, the indicator at your normal level):
+To start Winland at every sign-in without a UAC prompt (registers one Scheduled Task that runs
+`winland.exe` with highest privileges; it starts its companions itself):
 
 ```powershell
-# run from an elevated PowerShell, in the folder with the exes (e.g. dist)
+# run from an elevated PowerShell, in the folder with winland.exe (e.g. dist)
 .\install-autostart.ps1            # register
 .\install-autostart.ps1 -Uninstall # remove
 ```
@@ -384,16 +386,11 @@ two daemons with highest privileges, the indicator at your normal level):
 Winland.slnx                              solution
 
 src/
-  Winland.Common/                         shared library (pipe protocol + logger)
-  winland-keys/                           hotkey daemon (owns the keyboard hook)
-    KeyboardHook.cs                       global low-level Win-key hook (dedicated thread)
-    Config.cs / HotkeyConfig.cs           read config.conf, parse "bind" lines
-    AppLauncher.cs                        run a bind's command (script / sibling .exe / shell)
-    UnelevatedLauncher.cs                 start apps with the user's normal (unelevated) token
-    WindowsHotkeyDisabler.cs              set NoWinKeys so the shell ignores Win+<key>
-    config.conf                           the shortcut bindings you edit
-    launch-or-focus.ps1 / launch-web.ps1 / launch-or-focus-web.ps1 / show-desktop.ps1
-  winland-env/                            environment service (no keyboard hook)
+  Winland.Common/                         shared library (pipe protocol, logger, unelevated launcher)
+    UnelevatedLauncher.cs                 start a process with the user's normal (unelevated) token
+  winland/                                the main app: window manager, tray icon, companions
+    WinlandApp.cs                         composes everything; Exit ends it all
+    Companions.cs / KillOnCloseJob.cs     start winland-keys and winland-indicator; end them with Winland
     WorkspaceManager.cs                   per-monitor workspaces (switch / move / scratchpad / release)
     WorkspaceManager.Tiling.cs            tiling: tile / float / unlink, scrolling strips, reacting to window events
     StripLayout.cs / TileOrder.cs         the strip's geometry and tile order (pure, unit-tested)
@@ -403,15 +400,22 @@ src/
     DispatchServer.cs / UiInvoker.cs      named-pipe control channel
     EventServer.cs / PipeAcl.cs           broadcast pipe: pushes every monitor's workspace to subscribers
     TrayIcon.cs                           tray presence (static icon, Status/Exit menu)
-  winland-indicator/                      per-monitor on-screen workspace circles (unelevated)
+  winland-keys/                           companion: hotkey daemon (owns the keyboard hook)
+    KeyboardHook.cs                       global low-level Win-key hook (dedicated thread)
+    Config.cs / HotkeyConfig.cs           read config.conf, parse "bind" lines
+    AppLauncher.cs                        run a bind's command (script / sibling .exe / shell)
+    WindowsHotkeyDisabler.cs              set NoWinKeys so the shell ignores Win+<key>
+    config.conf                           the shortcut bindings you edit
+    launch-or-focus.ps1 / launch-web.ps1 / launch-or-focus-web.ps1 / show-desktop.ps1
+  winland-indicator/                      companion: per-monitor on-screen workspace circles (unelevated)
     IndicatorApp.cs                       one window per monitor, display changes, dock persistence
     IndicatorWindow.cs                    one circle: layered rendering + drag/dock behavior
-    EventClient.cs / UiPoster.cs          subscribe to winland-env's events, hand them to the UI thread
+    EventClient.cs / UiPoster.cs          subscribe to winland's events, hand them to the UI thread
   winlandctl/                             one-shot control CLI (sends one command over the pipe)
 
 tests/
-  winland-env.Tests/                      unit tests for the tiling layout and tile order (MSTest)
+  winland.Tests/                          unit tests for the tiling layout, tile order and mouse moves (MSTest)
 
-packaging/                                start-winland.* and install-autostart.ps1 (tracked source)
+packaging/                                install-autostart.ps1 (tracked source, copied into dist)
 dist/                                     assembled output (gitignored): all exes + config + scripts
 ```

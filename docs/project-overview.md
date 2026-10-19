@@ -2,16 +2,17 @@
 
 ## 1. What Winland Is
 
-Winland brings keyboard-centric, tiling-WM-style desktop ergonomics to Windows 11. It is **four
-cooperating tray/CLI/UI processes**, not a single app:
+Winland brings keyboard-centric, tiling-WM-style desktop ergonomics to Windows 11. The user starts
+one app, **`winland`**, which runs two companion processes and ends them when it exits:
 
-- **`winland-keys`** — the hotkey daemon. Owns one global keyboard hook and runs the command bound to
-  each Super (Win) combo.
-- **`winland-env`** — the environment service ("window manager"): per-monitor workspaces, directional
-  window focus, and the tray presence. Has no keyboard hook; it is driven over a control pipe.
-- **`winlandctl`** — a one-shot CLI that forwards a single command to `winland-env` over its pipe.
-- **`winland-indicator`** — the on-screen workspace circles, one per monitor. Runs unelevated and only
-  subscribes to `winland-env`'s broadcast event pipe.
+- **`winland`** — the main app: the "window manager" (per-monitor workspaces, tiling, directional
+  window focus) and the tray presence. Has no keyboard hook; it is driven over a control pipe. Starts
+  and ends the companions below.
+- **`winland-keys`** — companion: the hotkey daemon. Owns one global keyboard hook and runs the command
+  bound to each Super (Win) combo.
+- **`winland-indicator`** — companion: the on-screen workspace circles, one per monitor. Runs unelevated
+  and only subscribes to `winland`'s broadcast event pipe.
+- **`winlandctl`** — a one-shot CLI that forwards a single command to `winland` over its pipe.
 
 Current core capabilities:
 - Per-monitor numbered workspaces (unbounded; `1..9` and `11..19` bound by default), plus a roaming
@@ -25,7 +26,7 @@ Current core capabilities:
 - Configurable app shortcuts from text config (`config.conf`), launched with the user's normal
   (unelevated) token
 - A per-monitor on-screen workspace indicator: a draggable, edge-docked translucent circle that
-  updates live from `winland-env`
+  updates live from `winland`
 
 ## 2. Primary Goals
 
@@ -38,11 +39,11 @@ Current core capabilities:
 
 ## 3. Runtime Experience
 
-- `winland-env` runs in the system tray; `winland-keys` is headless (no tray icon — it logs its
+- `winland` runs in the system tray; `winland-keys` is headless (no tray icon — it logs its
   startup status instead).
 - `winland-keys` intercepts Super combos and runs each combo's configured command.
-- For workspace/focus combos that command is `winlandctl <verb>`, which reaches `winland-env`.
-- `winland-env`'s tray icon is a static Winland badge.
+- For workspace/focus combos that command is `winlandctl <verb>`, which reaches `winland`.
+- `winland`'s tray icon is a static Winland badge.
 - `winland-indicator` shows each monitor's workspace ("S" for the scratchpad, a dash when the monitor
   shows no workspace) as a translucent circle on **every** monitor, docked to an edge of that
   monitor's work area and draggable along it.
@@ -50,11 +51,11 @@ Current core capabilities:
 ## 4. The Super-key flow
 
 ```
-Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  winlandctl  →  pipe  →  winland-env
+Win+1  →  winland-keys (hook)  →  runs "winlandctl workspace 1"  →  winlandctl  →  pipe  →  winland
 ```
 
 `winland-keys` resolves the combo to its bound command and runs it; nothing about workspaces lives in
-the keys daemon. `winland-env` only ever acts on commands that arrive on its pipe.
+the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 
 ## 5. Feature Summary
 
@@ -79,7 +80,7 @@ the keys daemon. `winland-env` only ever acts on commands that arrive on its pip
 
 ### 5.3 On-Screen Workspace Indicator
 - One translucent circle per monitor showing that monitor's workspace (number, "S" for the
-  scratchpad, "–" for none/unknown), updated live from `winland-env`'s event pipe.
+  scratchpad, "–" for none/unknown), updated live from `winland`'s event pipe.
 - Left-drag slides the circle **along** the work-area edge it is docked to; coming near another edge
   re-docks it there. It can never leave its monitor or take focus.
 - The dock edge and position are remembered per monitor across restarts.
@@ -99,8 +100,8 @@ the keys daemon. `winland-env` only ever acts on commands that arrive on its pip
 - WinForms for the tray UI, the layered indicator windows, and UI-thread message pumps
 - Win32/DWM/GDI interop for hooks, monitor/window operations, focus behavior, and per-pixel-alpha
   rendering (`UpdateLayeredWindow`)
-- Two local **named pipes**: `\\.\pipe\winland-env` (commands, `winlandctl` → `winland-env`) and
-  `\\.\pipe\winland-env-events` (state broadcast, `winland-env` → `winland-indicator`)
+- Two local **named pipes**: `\\.\pipe\winland` (commands, `winlandctl` → `winland`) and
+  `\\.\pipe\winland-events` (state broadcast, `winland` → `winland-indicator`)
 - PowerShell scripts for extensible launcher actions
 
 ## 7. Configuration and Assets
@@ -110,35 +111,36 @@ Files packaged next to `winland-keys.exe`:
 - `launch-or-focus.ps1`, `launch-web.ps1`, `launch-or-focus-web.ps1`, `show-desktop.ps1`
 - `winlandctl.exe` (copied beside the keys daemon by its build, so binds can run it)
 
+All of them sit next to `winland.exe`: building `src/winland` copies its companions' output there.
+
 Config model:
 - Global key-value lines (`keyword = value`)
 - Shortcut bindings consumed from `bind` entries
 
 ## 8. Starting Winland
 
-Both daemons must run, both elevated (UIPI + the elevated control pipe require it). The indicator is
-optional and runs at the user's normal level.
+Start `winland.exe` — it runs elevated (UIPI + the elevated control pipe require it), so it asks once
+for administrator rights. It starts `winland-keys` with its own rights and `winland-indicator` at the
+user's normal level, and ends both when it exits (tray → Exit), however it exits (`Companions`, see
+`architecture-overview.md` §1.2).
 
-- **Packaged:** double-click `dist/start-winland.cmd` (or run `start-winland.ps1`). One UAC prompt;
-  it stops old instances and starts the daemons, plus the indicator if its exe is present. `-Stop`
-  stops all three. Tracked source in `packaging/`.
-- **From source:** `run.ps1` at the repo root (stop → build → start). `install-autostart.ps1`
-  registers all three as logon Scheduled Tasks — the daemons elevated (no UAC at sign-in), the
-  indicator at `-RunLevel Limited`.
+- **Packaged:** double-click `dist/winland.exe`. `install-autostart.ps1` (tracked in `packaging/`)
+  registers it as a logon Scheduled Task with highest privileges (no UAC at sign-in).
+- **From source:** `run.ps1` at the repo root (stop → build → start `winland.exe`).
 
 ## 9. Repository / Code Orientation
 
 ```
-src/Winland.Common/   Ipc.cs, Log.cs                       shared pipe protocol + logging
-src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          hotkey daemon (the only keyboard hook)
-                      Config.cs, HotkeyConfig.cs,
-                      AppLauncher.cs, UnelevatedLauncher.cs,
-                      WindowsHotkeyDisabler.cs
-src/winland-env/      EnvApp.cs, DispatchServer.cs,         environment service (pipe-driven)
+src/Winland.Common/   Ipc.cs, Log.cs, UnelevatedLauncher.cs shared pipe protocol, logging, unelevated starts
+src/winland/          WinlandApp.cs, Companions.cs,         the main app (pipe-driven window manager)
+                      KillOnCloseJob.cs, DispatchServer.cs,
                       EventServer.cs, PipeAcl.cs,
                       UiInvoker.cs, Dispatcher.cs,
-                      WorkspaceManager.cs, WindowNavigator.cs, TrayIcon.cs
-src/winland-indicator/ IndicatorApp.cs, IndicatorWindow.cs, on-screen workspace circles (unelevated)
+                      WorkspaceManager*.cs, WindowNavigator.cs, TrayIcon.cs
+src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          companion: hotkey daemon (the only keyboard hook)
+                      Config.cs, HotkeyConfig.cs,
+                      AppLauncher.cs, WindowsHotkeyDisabler.cs
+src/winland-indicator/ IndicatorApp.cs, IndicatorWindow.cs, companion: workspace circles (unelevated)
                       EventClient.cs, UiPoster.cs, DockState.cs
 src/winlandctl/       Program.cs                            control CLI (one-shot)
 ```

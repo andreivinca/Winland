@@ -88,7 +88,7 @@ Launch errors are logged and otherwise ignored, to preserve daemon stability.
 ## 5. Bundled Script Verbs
 
 The scripts run unelevated (§4.5). Window work that must reach elevated windows lives in
-`winland-env`, reached through `winlandctl` (whose pipe accepts unelevated callers); script-local
+`winland`, reached through `winlandctl` (whose pipe accepts unelevated callers); script-local
 window work (e.g. `show-desktop.ps1`) is subject to UIPI and leaves elevated apps' windows alone.
 
 ## 5.1 `launch-or-focus.ps1`
@@ -102,10 +102,10 @@ app verbatim, so dash-prefixed args survive, e.g.
 `launch-or-focus wt.exe WindowsTerminal -- -d E:\`.
 
 Behavior summary:
-- Runs `winlandctl focus-app <Match>`; `winland-env` focuses the app's frontmost non-minimized
+- Runs `winlandctl focus-app <Match>`; `winland` focuses the app's frontmost non-minimized
   window (restoring a minimized one if that is all there is).
 - Exit code 0 means a window was focused — done.
-- Any failure (no window, app already foreground, `winland-env` not running) → `Start-Process` a new
+- Any failure (no window, app already foreground, `winland` not running) → `Start-Process` a new
   instance.
 
 ## 5.2 `launch-web.ps1`
@@ -127,7 +127,7 @@ Behavior summary:
 - Runs `winlandctl focus-web <url>`. Chromium-based browsers give each `--app` window its own
   AppUserModelID, `<browser>.<host>_<path>` (e.g. `Chromium.gemini.google.com_/`), while ordinary
   browser windows carry the browser's id — so only that URL's app window matches.
-- Exit code 0 means it was focused — done. Otherwise (none open, already foreground, `winland-env`
+- Exit code 0 means it was focused — done. Otherwise (none open, already foreground, `winland`
   not running) it runs `launch-web.ps1 <url>`.
 
 ## 5.3 `show-desktop.ps1`
@@ -150,11 +150,12 @@ Behavior summary:
 
 ## 7. Operational Considerations
 
-- Config is read at startup; restart the keys daemon to apply changes (the start scripts stop old
-  instances first).
-- Scripts and `winlandctl.exe` are expected next to `winland-keys.exe` (copied during build).
+- Config is read when the keys daemon starts; restart Winland (tray → Exit, then start it again, or
+  `run.ps1`) to apply changes.
+- Scripts and `winlandctl.exe` are expected next to `winland-keys.exe` (copied during build — and the
+  whole set next to `winland.exe`, which starts the keys daemon).
 - Execution policy bypass increases flexibility but expands trust assumptions.
-- Workspace/focus binds require `winland-env` to be running; otherwise `winlandctl` exits with code
+- Workspace/focus binds require `winland` to be running; otherwise `winlandctl` exits with code
   `3` (and the action silently does nothing). Other binds work whenever `winland-keys` runs —
   `launch-or-focus` then degrades to always launching.
 
