@@ -25,9 +25,6 @@ internal static class WindowNavigator
     private const uint GW_HWNDPREV = 3;
     private const uint GW_OWNER = 4;
     private const int WM_CLOSE = 0x0010;
-    private const int SW_RESTORE = 9;
-    private const uint SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000;
-    private const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
 
     public static void CloseForeground()
     {
@@ -138,7 +135,7 @@ internal static class WindowNavigator
         }
 
         Log.Line(logLine);
-        ForceForeground(best);
+        Foreground.Activate(best);
         return true;
     }
 
@@ -221,7 +218,7 @@ internal static class WindowNavigator
         if (bestHandle != IntPtr.Zero)
         {
             LogFocusedProcess(bestHandle);
-            ForceForeground(bestHandle);
+            Foreground.Activate(bestHandle);
         }
     }
 
@@ -290,32 +287,6 @@ internal static class WindowNavigator
         return string.Equals(name, "Progman", StringComparison.Ordinal)
             || string.Equals(name, "WorkerW", StringComparison.Ordinal)
             || string.Equals(name, "Shell_TrayWnd", StringComparison.Ordinal); // the taskbar
-    }
-
-    // Bring a window to the foreground, restoring it first if minimized. Briefly clears the
-    // foreground-lock timeout, the same technique WorkspaceManager uses (AttachThreadInput is avoided
-    // — it can corrupt keyboard input state when attaching to the shell thread).
-    private static void ForceForeground(IntPtr hWnd)
-    {
-        if (IsIconic(hWnd))
-        {
-            ShowWindow(hWnd, SW_RESTORE);
-        }
-
-        uint original = 0;
-        bool got = SystemParametersInfoGet(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ref original, 0);
-        if (got)
-        {
-            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, UIntPtr.Zero, 0);
-        }
-
-        SetForegroundWindow(hWnd);
-        BringWindowToTop(hWnd);
-
-        if (got)
-        {
-            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, (UIntPtr)original, 0);
-        }
     }
 
     private static bool IsWindowOccluded(IntPtr hWnd)
@@ -538,9 +509,6 @@ internal static class WindowNavigator
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -566,18 +534,6 @@ internal static class WindowNavigator
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
-    private static extern bool SystemParametersInfoGet(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
-
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
-    private static extern bool SystemParametersInfoSet(uint uiAction, uint uiParam, UIntPtr pvParam, uint fWinIni);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);

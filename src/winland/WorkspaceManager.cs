@@ -392,7 +392,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         // Follow the window: make n the active workspace on its home monitor (laying out n's strip there,
         // the moved window included, and putting away the outgoing tiles), then land focus on it.
         SwitchFocusedMonitorTo(n);
-        ForceForeground(hWnd);
+        Foreground.Activate(hWnd);
         ReflowShown(left); // the workspace it came from, if still on screen, closes the gap
         GuardEvents();
 
@@ -683,7 +683,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         if (target != IntPtr.Zero)
         {
-            ForceForeground(target);
+            Foreground.Activate(target);
             _lastActive[workspace] = target;
         }
 
@@ -694,46 +694,6 @@ internal sealed partial class WorkspaceManager : IDisposable
     // which keeps WS_VISIBLE on a closed Store app, a closed shell panel, or a window on another virtual
     // desktop while nothing of it is on screen.
     private static bool IsOnScreen(IntPtr hWnd) => IsWindowVisible(hWnd) && !IsIconic(hWnd) && !IsWindowCloaked(hWnd);
-
-    // Bring a window to the foreground. We avoid AttachThreadInput (it can corrupt keyboard input
-    // state when attaching to the shell thread); briefly clearing the foreground-lock timeout is safe.
-    private void ForceForeground(IntPtr hWnd)
-    {
-        if (IsIconic(hWnd))
-        {
-            ShowWindow(hWnd, SW_RESTORE);
-        }
-
-        WithForegroundLockLifted(() =>
-        {
-            SetForegroundWindow(hWnd);
-            BringWindowToTop(hWnd);
-        });
-    }
-
-    // Run an action with the system foreground-lock timeout at 0, which lets this background process
-    // activate and raise other processes' windows; the user's setting is always put back.
-    private static void WithForegroundLockLifted(Action action)
-    {
-        uint original = 0;
-        bool got = SystemParametersInfoGet(SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ref original, 0);
-        if (got)
-        {
-            SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, UIntPtr.Zero, 0);
-        }
-
-        try
-        {
-            action();
-        }
-        finally
-        {
-            if (got)
-            {
-                SystemParametersInfoSet(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, (UIntPtr)original, 0);
-            }
-        }
-    }
 
     private bool TryGetWindowMonitor(IntPtr hWnd, out MonitorState? monitor)
     {
@@ -891,7 +851,6 @@ internal sealed partial class WorkspaceManager : IDisposable
     private const uint SW_SHOWNORMAL = 1;
     private const uint SW_SHOWMAXIMIZED = 3;
     private const int SW_MINIMIZE = 6;
-    private const int SW_RESTORE = 9;
     private const uint WPF_RESTORETOMAXIMIZED = 0x0002;
 
     private const uint GW_OWNER = 4;
@@ -904,9 +863,6 @@ internal sealed partial class WorkspaceManager : IDisposable
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
-
-    private const uint SPI_GETFOREGROUNDLOCKTIMEOUT = 0x2000;
-    private const uint SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2001;
 
     private const uint SWP_NOACTIVATE = 0x0010;
 
@@ -1002,18 +958,6 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
-    private static extern bool SystemParametersInfoGet(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
-
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
-    private static extern bool SystemParametersInfoSet(uint uiAction, uint uiParam, UIntPtr pvParam, uint fWinIni);
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(IntPtr hWnd);

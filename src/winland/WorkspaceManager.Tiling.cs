@@ -115,7 +115,7 @@ internal sealed partial class WorkspaceManager
         _floating.Remove(hWnd);
         ForgetTile(hWnd, workspace);
         ReflowShown(workspace);
-        ForceForeground(hWnd); // above the tiles that just moved in under it
+        Foreground.Activate(hWnd); // above the tiles that just moved in under it
         GuardEvents();
 
         LogTiles($"unlink {WsLabel(workspace)}", workspace, hWnd);
@@ -151,7 +151,7 @@ internal sealed partial class WorkspaceManager
         {
             _floating.Add(hWnd);
             ReflowShown(workspace);
-            ForceForeground(hWnd); // above the tiles that just moved in under it
+            Foreground.Activate(hWnd); // above the tiles that just moved in under it
             GuardEvents();
 
             LogTiles($"float {WsLabel(workspace)}", workspace, hWnd);
@@ -218,7 +218,7 @@ internal sealed partial class WorkspaceManager
         GuardEvents();
         _lastActive[workspace] = target;
         LayoutWorkspace(workspace, monitor, target);
-        ForceForeground(target);
+        Foreground.Activate(target);
         GuardEvents();
         return true;
     }
@@ -247,7 +247,7 @@ internal sealed partial class WorkspaceManager
         else if (TryGetWindowMonitor(hWnd, out MonitorState? from) && AdjacentMonitor(from!, direction) is MonitorState to)
         {
             MoveWindowToMonitor(hWnd, to);
-            ForceForeground(hWnd);
+            Foreground.Activate(hWnd);
         }
         GuardEvents();
     }
@@ -284,7 +284,7 @@ internal sealed partial class WorkspaceManager
         int left = Relink(hWnd, workspace, order);
         LayoutWorkspace(workspace, monitor, hWnd);
         ReflowShown(left);
-        ForceForeground(hWnd);
+        Foreground.Activate(hWnd);
 
         LogTiles($"move tile to {WsLabel(workspace)}", workspace, hWnd);
     }

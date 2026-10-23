@@ -246,8 +246,8 @@ Z-order predecessors; not minimized per its window placement.
 - Choose minimal `(primary, secondary)`.
 
 ### 7.3 Focus Execution
-- Force the chosen candidate to the foreground (foreground-lock-timeout suppression, as `focus-app`
-  does); log the focused process name best-effort.
+- Force the chosen candidate to the foreground (`Foreground.Activate`, shared with `focus-app` and the
+  workspace engine); log the focused process name best-effort.
 
 ### 7.4 Close Foreground
 - `close` posts `WM_CLOSE` to the foreground window.

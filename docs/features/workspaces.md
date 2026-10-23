@@ -165,8 +165,9 @@ A roaming workspace reserved at `int.MaxValue` with **no home monitor**:
 ## 9. Focus Restoration and Event Guarding
 
 `FocusWorkspace` prefers `_lastActive[workspace]` (if still valid, non-minimized, and still a
-member), else the first non-minimized member. Focus uses temporary foreground-lock-timeout
-suppression (never `AttachThreadInput`).
+member), else the first non-minimized member. Focus goes through `Foreground.Activate` (a no-op
+injected input to claim the foreground right, then `SetForegroundWindow`; never `AttachThreadInput`
+— see `window-focus.md` §3.5).
 
 Workspace operations generate window events asynchronously; a guard period (~1500 ms) around each
 operation makes the foreground hook ignore them. Because a click made *during* the guard can be

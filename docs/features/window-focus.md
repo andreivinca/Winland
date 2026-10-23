@@ -63,9 +63,13 @@ Selection rule:
 ### 3.5 Focus Action
 - On best candidate found:
   - Log process name best-effort.
-  - Bring it to the foreground with the same foreground-lock-timeout suppression `focus-app` and the
-    workspace engine use (a plain `SetForegroundWindow` is refused because `winland` never owns
-    the input).
+  - Bring it to the foreground with `Foreground.Activate`, which `focus-app` and the workspace engine
+    use too. `winland` never receives the hotkey's input (the keystroke goes to `winland-keys`, and the
+    command arrives over the pipe via `winlandctl`), so Windows refuses a plain `SetForegroundWindow`
+    from it whenever something else is in the foreground — the target just flashes on the taskbar.
+    `Activate` first injects a no-op mouse input (`SendInput`, no motion, no buttons), which makes
+    `winland` the process that received the last input and so grants it the foreground right. A
+    refusal is still logged.
 - The `Dispatcher` then moves the mouse to the newly focused window (§3.6).
 
 ### 3.6 The Mouse Follows Focus (`CursorWarp`)
@@ -89,8 +93,8 @@ centre, unless the cursor is on that monitor already), so a shortcut launched ne
 - Returns false ("`ERR` nothing to focus") when the foreground window already belongs to one of
   them — the caller (launch-or-focus) then starts a new instance.
 - Otherwise picks the app's topmost non-minimized window (EnumWindows yields top-to-bottom), or the
-  topmost minimized one as a fallback, restores it if needed, and forces it to the foreground with
-  the same foreground-lock-timeout suppression the workspace engine uses.
+  topmost minimized one as a fallback, and activates it with `Foreground.Activate` (§3.5), which
+  restores it first if needed.
 - Candidate windows must be visible, unowned, titled, non-cloaked, and not the shell.
 
 ## 5. Close Foreground Behavior
