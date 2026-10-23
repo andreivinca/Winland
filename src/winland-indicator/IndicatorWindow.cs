@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -6,21 +7,24 @@ using System.Drawing.Text;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using Winland.Common;
 
 namespace Winland.Indicator;
 
 /// <summary>
-/// One monitor's on-screen workspace badge: a translucent white circle carrying that monitor's
-/// workspace glyph, drawn as a layered window so its antialiased rim blends with whatever is behind it.
+/// One monitor's on-screen workspace badge: a translucent white rectangle docked to an edge of that
+/// monitor, listing its workspaces (see <see cref="WorkspaceStack"/>), drawn as a layered window so its
+/// antialiased corners blend with whatever is behind it. The side against the edge is square and tucks
+/// past it; the far side has rounded corners. Items run along the edge (<see cref="BadgeLayout"/>).
 ///
 /// It is deliberately invisible to window management. The window has an EMPTY title and the
-/// WS_EX_TOOLWINDOW style, which is exactly what winland's "is this an app window" filter (and the
-/// show-desktop script) reject — so it is never minimized, moved or counted as a workspace member. It
+/// WS_EX_TOOLWINDOW style, which is exactly what winland's "is this an app window" filter rejects — so
+/// it is never minimized, moved or counted as a workspace member. It
 /// also carries WS_EX_NOACTIVATE, so clicking and dragging it never takes focus away from the app the
 /// user is working in, and is topmost so it stays visible above ordinary windows.
 ///
-/// Dragging: the circle is always docked to one edge of its monitor's work area and slides ALONG that
+/// Dragging: only the grip at the badge's leading end starts a drag (<see cref="BadgeLayout.GripArea"/>); a
+/// press anywhere else on the badge does nothing. The badge is always docked to one edge of its monitor's
+/// work area and slides ALONG that
 /// edge; motion perpendicular to the edge is ignored until the cursor comes close enough to another
 /// edge, which re-docks it there (<see cref="DockFor"/>). It never leaves its monitor. The window only
 /// reports the gesture (<see cref="DragStarted"/>, <see cref="DragMoved"/>, <see cref="DragEnded"/>) and
@@ -33,23 +37,26 @@ namespace Winland.Indicator;
 /// </summary>
 internal sealed class IndicatorWindow : Form
 {
-    // Geometry at 96 DPI; every one of these is scaled by the monitor's own DPI (see Scaled).
-    private const int BaseCircleSize = 24;      // diameter of the circle
-    private const int BaseEdgeMargin = -6;      // negative: the circle tucks partly past the work-area edge
+    // Geometry at 96 DPI; every one of these is scaled by the monitor's own DPI (see Scaled). The badge's
+    // own measures are in BadgeLayout.
     private const int BaseDockThreshold = 80;   // how near an edge the cursor must come to dock there
 
-    private const int CircleAlpha = 64;         // ~25% opaque white — a hint, not a widget
-    private const int GlyphAlpha = 170;         // the number stays stronger than its disc, still soft
-    private const float GlyphReferenceCircle = 32f; // the tray icon's circle, which the em sizes below fit
+    private const int BadgeAlpha = 64;          // ~25% opaque white — a hint, not a widget
+    private const int GlyphAlpha = 170;         // the items stay stronger than their backing, still soft
+    private const int ActiveGlyphAlpha = 230;   // the on-screen workspace: its number in white, not black
 
     private MonitorInfo _monitor;
     private DockState _dock;
-    private int _workspace;                     // raw id from the event pipe; 0 = none/not known yet
-    private bool _visible = true;               // false: draw nothing (the workspace is on another circle)
+    private IReadOnlyList<StackItem> _items = [new(WorkspaceStack.Nothing, false)]; // until told otherwise
+    private bool _visible = true;               // false: draw nothing (the workspace is on another badge)
     private bool _dragging;
 
-    /// <summary>The left button went down on the circle: a drag begins. The circle keeps the mouse until it ends.</summary>
-    public event Action? DragStarted;
+    /// <summary>
+    /// The left button went down on the grip: a drag begins. The circle keeps the mouse until it ends. The
+    /// argument is the grab point: how far along the edge from the badge's leading end it was pressed, at 96
+    /// DPI — the drag keeps that point under the cursor (<see cref="DockFor"/>).
+    /// </summary>
+    public event Action<float>? DragStarted;
 
     /// <summary>The mouse moved during the drag; the cursor, in screen coordinates.</summary>
     public event Action<Point>? DragMoved;
@@ -75,11 +82,8 @@ internal sealed class IndicatorWindow : Form
     /// <summary>The monitor this circle belongs to.</summary>
     public MonitorInfo Monitor => _monitor;
 
-    /// <summary>Where the circle currently sits, for persistence.</summary>
+    /// <summary>Where the badge currently sits, for persistence.</summary>
     public DockState DockPosition => _dock;
-
-    /// <summary>The workspace the circle shows (raw id; 0 = none).</summary>
-    public int Workspace => _workspace;
 
     /// <summary>Never take focus: the user's app must stay active while they click or drag the circle.</summary>
     protected override bool ShowWithoutActivation => true;
@@ -110,19 +114,19 @@ internal sealed class IndicatorWindow : Form
     }
 
     /// <summary>
-    /// Show <paramref name="workspace"/> (a raw id, as it arrives over the event pipe) docked at
-    /// <paramref name="dock"/> — or nothing at all when <paramref name="visible"/> is false. One call is one
-    /// frame, so a circle never shows its new glyph in its old place or the other way round.
+    /// Show <paramref name="items"/> (see <see cref="WorkspaceStack"/>) docked at <paramref name="dock"/> —
+    /// or nothing at all when <paramref name="visible"/> is false. One call is one frame, so a badge never
+    /// shows its new contents in its old place or the other way round.
     /// </summary>
-    public void ShowBadge(DockState dock, int workspace, bool visible)
+    public void ShowBadge(DockState dock, IReadOnlyList<StackItem> items, bool visible)
     {
-        if (dock == _dock && workspace == _workspace && visible == _visible)
+        if (dock == _dock && items.SequenceEqual(_items) && visible == _visible)
         {
             return;
         }
 
         _dock = dock;
-        _workspace = workspace;
+        _items = items;
         _visible = visible;
         Redraw();
     }
@@ -148,9 +152,22 @@ internal sealed class IndicatorWindow : Form
         switch (m.Msg)
         {
             case WM_LBUTTONDOWN:
+                if (!OnGrip(m.LParam))
+                {
+                    return; // only the grip drags; the rest of the badge ignores the press
+                }
+
                 _dragging = true;
-                Capture = true; // keep receiving moves once the cursor leaves the circle — or its monitor
-                DragStarted?.Invoke();
+                Capture = true; // keep receiving moves once the cursor leaves the badge — or its monitor
+                Point pressed = ClientPoint(m.LParam);
+                int grab = BadgeLayout.IsVertical(_dock.Edge) ? pressed.Y : pressed.X;
+                DragStarted?.Invoke(grab * 96f / _monitor.Dpi);
+                return;
+
+            case WM_SETCURSOR when (m.LParam.ToInt64() & 0xFFFF) == HTCLIENT:
+                // The move cursor over the grip says "drag here"; the arrow everywhere else.
+                Cursor.Current = _dragging || OnGrip(PointToClient(Cursor.Position)) ? Cursors.SizeAll : Cursors.Default;
+                m.Result = new IntPtr(1);
                 return;
 
             case WM_MOUSEMOVE:
@@ -175,6 +192,18 @@ internal sealed class IndicatorWindow : Form
         base.WndProc(ref m);
     }
 
+    /// <summary>Whether a mouse message's client point (packed in <paramref name="lParam"/>) is on the grip.</summary>
+    private bool OnGrip(IntPtr lParam) => OnGrip(ClientPoint(lParam));
+
+    /// <summary>A mouse message's client point, packed in its <paramref name="lParam"/>.</summary>
+    private static Point ClientPoint(IntPtr lParam)
+    {
+        long packed = lParam.ToInt64();
+        return new Point((short)(packed & 0xFFFF), (short)((packed >> 16) & 0xFFFF));
+    }
+
+    private bool OnGrip(Point client) => LayoutFor(_dock.Edge).GripArea.Contains(client);
+
     private void EndDrag()
     {
         if (!_dragging)
@@ -188,22 +217,26 @@ internal sealed class IndicatorWindow : Form
     }
 
     /// <summary>
-    /// Where the circle docks for a cursor at <paramref name="cursor"/> (screen coordinates). The edge only
-    /// changes when the cursor comes within the dock threshold of one — otherwise the drag slides the
-    /// circle along the edge it already occupies, and motion away from that edge does nothing.
+    /// Where the circle docks for a cursor at <paramref name="cursor"/> (screen coordinates), held at
+    /// <paramref name="grab"/> (96-DPI distance from the badge's leading end, see <see cref="DragStarted"/>).
+    /// The edge only changes when the cursor comes within the dock threshold of one — otherwise the drag
+    /// slides the circle along the edge it already occupies, and motion away from that edge does nothing.
     /// </summary>
-    public DockState DockFor(Point cursor)
+    public DockState DockFor(Point cursor, float grab)
     {
         (DockEdge edge, int distance) = NearestEdge(_monitor.Work, cursor);
         DockEdge docked = distance <= Scaled(BaseDockThreshold) ? edge : _dock.Edge;
 
-        // The circle centres on the cursor's coordinate PARALLEL to the docked edge, clamped so it
-        // always stays fully inside the work area — which is what keeps it on its own monitor.
+        // The grab point follows the cursor's coordinate PARALLEL to the docked edge, so the badge doesn't
+        // jump under the cursor at the press; clamped so it always stays fully inside the work area —
+        // which is what keeps it on its own monitor. Its length along that edge depends on the edge (items
+        // run along it). The grip is at the leading end on every edge, so the grab holds across a re-dock.
         Rectangle field = Field();
-        int size = Scaled(BaseCircleSize);
-        double offset = docked is DockEdge.Left or DockEdge.Right
-            ? Fraction(cursor.Y - size / 2.0 - field.Top, field.Height - size)
-            : Fraction(cursor.X - size / 2.0 - field.Left, field.Width - size);
+        int along = LayoutFor(docked).Along(docked);
+        double held = grab * _monitor.Dpi / 96.0;
+        double offset = BadgeLayout.IsVertical(docked)
+            ? Fraction(cursor.Y - held - field.Top, field.Height - along)
+            : Fraction(cursor.X - held - field.Left, field.Width - along);
 
         return new DockState(docked, offset);
     }
@@ -226,25 +259,28 @@ internal sealed class IndicatorWindow : Form
         travel <= 0 ? 0 : Math.Clamp(travelled / travel, 0, 1);
 
     /// <summary>
-    /// The rectangle the circle's box may occupy: the work area inset by the margin. The margin is
-    /// negative, so the field reaches PAST every work-area edge and a docked circle sits partly
-    /// hidden beyond the margin — including at the ends of the edge it is docked to.
+    /// The rectangle the badge's box may occupy: the work area grown by the tuck, so a docked badge sits
+    /// partly hidden beyond the margin — including at the ends of the edge it is docked to.
     /// </summary>
-    private Rectangle Field() => Rectangle.Inflate(_monitor.Work, -Scaled(BaseEdgeMargin), -Scaled(BaseEdgeMargin));
+    private Rectangle Field() =>
+        Rectangle.Inflate(_monitor.Work, Scaled(BadgeLayout.BaseTuck), Scaled(BadgeLayout.BaseTuck));
 
-    private Rectangle CircleBounds()
+    private BadgeLayout LayoutFor(DockEdge edge) =>
+        BadgeLayout.For(_items.Select(i => i.Text).ToList(), edge, _monitor.Dpi);
+
+    private Rectangle BadgeBounds(BadgeLayout layout)
     {
         Rectangle field = Field();
-        int size = Scaled(BaseCircleSize);
-        int along = (int)Math.Round(_dock.Offset * Math.Max(0, field.Width - size));
-        int down = (int)Math.Round(_dock.Offset * Math.Max(0, field.Height - size));
+        Size size = layout.Size;
+        int along = (int)Math.Round(_dock.Offset * Math.Max(0, field.Width - size.Width));
+        int down = (int)Math.Round(_dock.Offset * Math.Max(0, field.Height - size.Height));
 
         return _dock.Edge switch
         {
-            DockEdge.Left => new Rectangle(field.Left, field.Top + down, size, size),
-            DockEdge.Right => new Rectangle(field.Right - size, field.Top + down, size, size),
-            DockEdge.Top => new Rectangle(field.Left + along, field.Top, size, size),
-            _ => new Rectangle(field.Left + along, field.Bottom - size, size, size)
+            DockEdge.Left => new Rectangle(new Point(field.Left, field.Top + down), size),
+            DockEdge.Right => new Rectangle(new Point(field.Right - size.Width, field.Top + down), size),
+            DockEdge.Top => new Rectangle(new Point(field.Left + along, field.Top), size),
+            _ => new Rectangle(new Point(field.Left + along, field.Bottom - size.Height), size)
         };
     }
 
@@ -257,24 +293,24 @@ internal sealed class IndicatorWindow : Form
             return;
         }
 
-        Rectangle bounds = CircleBounds();
+        BadgeLayout layout = LayoutFor(_dock.Edge);
+        Rectangle bounds = BadgeBounds(layout);
         // PREMULTIPLIED alpha, because that is what ULW_ALPHA composites: a plain ARGB surface gives
-        // every semi-transparent edge pixel a bright halo that reads as a border around the circle.
+        // every semi-transparent edge pixel a bright halo that reads as a border around the badge.
         using var surface = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppPArgb);
         using (Graphics g = Graphics.FromImage(surface))
         {
-            DrawBadge(g, bounds.Width);
+            DrawBadge(g, layout);
         }
 
         Present(surface, bounds);
     }
 
     /// <summary>
-    /// Draw the badge: a translucent white disc with an opaque black glyph — the tray icon's visual
-    /// language, only see-through. The glyph is the workspace number, "S" for the roaming scratchpad,
-    /// or an en dash when the monitor shows no workspace (or we have no news about it yet).
+    /// Draw the badge: a translucent white rectangle, rounded on the side away from its edge, with each
+    /// item in soft black bold Segoe UI in its own cell — the tray icon's visual language, only see-through.
     /// </summary>
-    private void DrawBadge(Graphics g, int size)
+    private void DrawBadge(Graphics g, BadgeLayout layout)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
@@ -284,29 +320,95 @@ internal sealed class IndicatorWindow : Form
             return; // fully transparent: nothing to see, and the mouse passes through
         }
 
-        using var disc = new SolidBrush(Color.FromArgb(CircleAlpha, Color.White));
-        g.FillEllipse(disc, 0.5f, 0.5f, size - 1f, size - 1f); // inset so the antialiased rim isn't clipped
+        using (GraphicsPath shape = Shape(layout.Size, _dock.Edge, BadgeLayout.BaseCornerRadius * layout.Scale))
+        using (var backing = new SolidBrush(Color.FromArgb(BadgeAlpha, Color.White)))
+        {
+            g.FillPath(backing, shape);
+        }
 
-        // Raw ids straight off the event pipe: the scratchpad has its reserved id, and anything below 1
-        // means the monitor is showing nothing.
-        string text = _workspace == Ipc.ScratchpadWorkspace ? "S"
-            : _workspace >= 1 ? _workspace.ToString()
-            : "–";
-
-        // Shrink the glyph so multi-digit numbers still fit — the tray icon's curve, scaled down a
-        // step so the number sits small and quiet inside the disc.
-        float emSize = size * (text.Length switch { <= 1 => 15f, 2 => 11f, _ => 8f }) / GlyphReferenceCircle;
         using var ink = new SolidBrush(Color.FromArgb(GlyphAlpha, Color.Black));
-        using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
+        DrawGrip(g, ink, layout.Grip, BadgeLayout.IsVertical(_dock.Edge), layout.Scale);
+
+        using var font = new Font("Segoe UI", BadgeLayout.BaseFontSize * layout.Scale, FontStyle.Bold, GraphicsUnit.Pixel);
         using var format = new StringFormat
         {
             Alignment = StringAlignment.Center,
             LineAlignment = StringAlignment.Center
         };
 
-        // Lay the text out in a box a hair taller than the circle: Segoe UI's digits sit high, and the
-        // tray icon nudges them down the same way.
-        g.DrawString(text, font, ink, new RectangleF(0, 0, size, size + size / GlyphReferenceCircle), format);
+        // Segoe UI's digits sit high: nudge each cell down a hair, as the tray icon does. The workspace on
+        // screen is the one number drawn in white instead of black — nothing else marks it. Each item is
+        // drawn centred on a POINT, not in its cell's rectangle: a cell is the glyphs' bare extent, and GDI+
+        // would trim or wrap text that, with its side bearings, overflows a layout rectangle.
+        float nudge = layout.Scale / 2;
+        using var activeInk = new SolidBrush(Color.FromArgb(ActiveGlyphAlpha, Color.White));
+        for (int i = 0; i < _items.Count; i++)
+        {
+            RectangleF cell = layout.Cells[i];
+            var centre = new PointF(cell.Left + cell.Width / 2, cell.Top + cell.Height / 2 + nudge);
+            g.DrawString(_items[i].Text, font, _items[i].Active ? activeInk : ink, centre, format);
+        }
+    }
+
+    /// <summary>
+    /// Draw the drag grip: two rows of three dots running across the edge — so the grip reads as a
+    /// separate handle beside the items, whichever way they run.
+    /// </summary>
+    private static void DrawGrip(Graphics g, Brush ink, RectangleF cell, bool vertical, float scale)
+    {
+        float dot = BadgeLayout.BaseGripDot * scale;
+        float pitch = BadgeLayout.BaseGripPitch * scale;
+        int alongCount = 2;         // along the edge
+        int acrossCount = 3;        // across it
+        PointF centre = new(cell.Left + cell.Width / 2, cell.Top + cell.Height / 2);
+
+        for (int a = 0; a < alongCount; a++)
+        {
+            for (int c = 0; c < acrossCount; c++)
+            {
+                float alongOffset = (a - (alongCount - 1) / 2f) * pitch;
+                float acrossOffset = (c - (acrossCount - 1) / 2f) * pitch;
+                float x = centre.X + (vertical ? acrossOffset : alongOffset);
+                float y = centre.Y + (vertical ? alongOffset : acrossOffset);
+                g.FillEllipse(ink, x - dot / 2, y - dot / 2, dot, dot);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The badge's outline: square on the side against <paramref name="edge"/> (that side tucks past the
+    /// margin), the two corners of the opposite side rounded by <paramref name="radius"/>.
+    /// </summary>
+    private static GraphicsPath Shape(Size size, DockEdge edge, float radius)
+    {
+        // Inset half a pixel so the antialiased outline isn't clipped by the surface.
+        var box = new RectangleF(0.5f, 0.5f, size.Width - 1f, size.Height - 1f);
+        float d = Math.Min(2 * radius, Math.Min(box.Width, box.Height));
+
+        bool roundTopLeft = edge is DockEdge.Bottom or DockEdge.Right;
+        bool roundTopRight = edge is DockEdge.Bottom or DockEdge.Left;
+        bool roundBottomRight = edge is DockEdge.Top or DockEdge.Left;
+        bool roundBottomLeft = edge is DockEdge.Top or DockEdge.Right;
+
+        var path = new GraphicsPath();
+        AddCorner(path, roundTopLeft, new RectangleF(box.Left, box.Top, d, d), 180, new PointF(box.Left, box.Top));
+        AddCorner(path, roundTopRight, new RectangleF(box.Right - d, box.Top, d, d), 270, new PointF(box.Right, box.Top));
+        AddCorner(path, roundBottomRight, new RectangleF(box.Right - d, box.Bottom - d, d, d), 0, new PointF(box.Right, box.Bottom));
+        AddCorner(path, roundBottomLeft, new RectangleF(box.Left, box.Bottom - d, d, d), 90, new PointF(box.Left, box.Bottom));
+        path.CloseFigure();
+        return path;
+    }
+
+    private static void AddCorner(GraphicsPath path, bool round, RectangleF arc, float startAngle, PointF square)
+    {
+        if (round && arc.Width > 0)
+        {
+            path.AddArc(arc, startAngle, 90);
+        }
+        else
+        {
+            path.AddLine(square, square);
+        }
     }
 
     /// <summary>
@@ -366,6 +468,8 @@ internal sealed class IndicatorWindow : Form
     private const int WS_EX_LAYERED = 0x00080000;
     private const int WS_EX_NOACTIVATE = 0x08000000;
 
+    private const int WM_SETCURSOR = 0x0020;
+    private const int HTCLIENT = 1;
     private const int WM_MOUSEMOVE = 0x0200;
     private const int WM_LBUTTONDOWN = 0x0201;
     private const int WM_LBUTTONUP = 0x0202;

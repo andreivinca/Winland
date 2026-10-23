@@ -54,13 +54,29 @@ public sealed class WorkspaceDragTests
     }
 
     [TestMethod]
-    public void Badge_TheCarrierShowsTheCarriedWorkspace_WhateverTheSnapshotSays()
+    public void Badge_TheCarrierListsTheCarriedWorkspaceAsShown_AndKeepsWhatItShowedHomedThere()
     {
         WorkspaceDrag drag = DragOf(3);
         drag.Follow(Right);
 
-        Assert.AreEqual((3, true), drag.Badge(Right, shown: 5)); // the snapshot hasn't caught up yet
-        Assert.AreEqual((3, true), drag.Badge(Right, shown: 3));
+        // The snapshot hasn't caught up yet: Right still shows 5, homed there with 2.
+        (MonitorWorkspaces carrier, bool visible) = drag.Badge(Monitor(Right, shown: 5, 2, 5));
+
+        Assert.IsTrue(visible);
+        Assert.AreEqual(3, carrier.Shown);
+        CollectionAssert.AreEqual(new[] { 2, 3, 5 }, carrier.Homed.ToArray());
+    }
+
+    [TestMethod]
+    public void Badge_OnceTheSnapshotHasCaughtUp_TheCarrierIsUnchanged()
+    {
+        WorkspaceDrag drag = DragOf(3);
+        drag.Follow(Right);
+
+        (MonitorWorkspaces carrier, _) = drag.Badge(Monitor(Right, shown: 3, 3, 5));
+
+        Assert.AreEqual(3, carrier.Shown);
+        CollectionAssert.AreEqual(new[] { 3, 5 }, carrier.Homed.ToArray());
     }
 
     [TestMethod]
@@ -69,19 +85,26 @@ public sealed class WorkspaceDragTests
         WorkspaceDrag drag = DragOf(3);
         drag.Follow(Right);
 
-        Assert.IsFalse(drag.Badge(Left, shown: 3).Visible);       // before the snapshot: never two 3s
-        Assert.AreEqual((1, true), drag.Badge(Left, shown: 1));    // after: its previous workspace
-        Assert.AreEqual((0, true), drag.Badge(Left, shown: 0));    // or nothing
+        Assert.IsFalse(drag.Badge(Monitor(Left, shown: 3, 1, 3)).Visible); // before the snapshot: never two 3s
+
+        (MonitorWorkspaces after, bool visible) = drag.Badge(Monitor(Left, shown: 1, 1, 3));
+        Assert.IsTrue(visible);                                             // after: its previous workspace
+        Assert.AreEqual(1, after.Shown);
+        CollectionAssert.AreEqual(new[] { 1 }, after.Homed.ToArray());      // and the carried one is dropped
     }
 
     [TestMethod]
     public void Badge_WhenNothingIsCarried_ShowsTheSnapshot()
     {
         WorkspaceDrag drag = DragOf(0);
+        MonitorWorkspaces left = Monitor(Left, shown: 0);
+        MonitorWorkspaces right = Monitor(Right, shown: 5, 5);
 
-        Assert.AreEqual((0, true), drag.Badge(Left, shown: 0));
-        Assert.AreEqual((5, true), drag.Badge(Right, shown: 5));
+        Assert.AreEqual((left, true), drag.Badge(left));
+        Assert.AreEqual((right, true), drag.Badge(right));
     }
+
+    private static MonitorWorkspaces Monitor(string device, int shown, params int[] homed) => new(device, shown, homed);
 
     [TestMethod]
     public void DockAtPress_IsWhereACircleWasWhenTheDragBegan()

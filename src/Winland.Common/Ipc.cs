@@ -18,16 +18,17 @@ public static class Ipc
 
     /// <summary>
     /// Broadcast-only pipe (\\.\pipe\winland-events) on which winland publishes what every
-    /// monitor is showing. A subscriber connects and only ever reads: the server writes the current
+    /// monitor is showing, and which workspaces live on it. A subscriber connects and only ever reads: the server writes the current
     /// snapshot immediately on connect, then one fresh snapshot line after each workspace change (and
     /// a repeat of the current line after ~30 s of no change), so a
     /// client that starts before or after Winland ends up with the same state either way.
     ///
-    /// One message is one line: space-separated "&lt;device&gt;=&lt;workspace&gt;" pairs, ordered
-    /// left-to-right, e.g. "\\.\DISPLAY1=3 \\.\DISPLAY2=5". The device is the stable GDI display name
-    /// (never contains a space); the workspace is the raw number — 0 for "this monitor shows no
-    /// workspace" and int.MaxValue for the roaming scratchpad. Presentation is the client's business:
-    /// the indicator renders those two as "–" and "S".
+    /// One message is one line: space-separated "&lt;device&gt;=&lt;shown&gt;:&lt;homed&gt;" entries,
+    /// ordered left-to-right, e.g. "\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:". The device is the stable GDI
+    /// display name (never contains a space); shown is the raw number of the workspace on screen — 0 for
+    /// "this monitor shows no workspace" and int.MaxValue for the roaming scratchpad; homed is the
+    /// comma-separated, ascending list of workspaces whose home is that monitor (possibly empty).
+    /// <see cref="MonitorWorkspaces"/> writes and reads it. Presentation is the client's business.
     /// </summary>
     public const string EventsPipeName = "winland-events";
 

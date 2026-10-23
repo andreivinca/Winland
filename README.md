@@ -42,16 +42,17 @@ automatically at every logon without a UAC prompt, see [Auto-start at logon](#au
 - A monitor shows **one workspace at a time**. Switching a monitor to another workspace minimizes
   ("puts away") everything it was showing and lays out the new workspace's tiles — switch to an empty
   workspace and the monitor is empty.
-- A window joins a workspace **only when you say so** — when you **tile** it (`Win+Space`), **move** it
+- A window joins a workspace **only when you say so** — when you **tile** it (`Win+T`), **move** it
   to a workspace (`Win+Shift+N`), or open it with a **Winland shortcut** (it opens as a tile of the
   workspace on the monitor under the mouse). Every other window is a **normal Windows window**: you
   open, drag, resize, maximize and snap it as usual, and Winland never tiles or resizes it. It belongs to
   no workspace, so a workspace switch puts it away with everything else on that monitor, and it doesn't
   come back with any workspace. Windows that are open when Winland starts are all normal windows.
-- **Drag a tile** (or resize it) with the mouse — or press `Win+T` — and it leaves the row and
+- **Drag a tile** (or resize it) with the mouse and it leaves the row and
   **floats** right where it is — Windows handles it from then on — but it stays in its workspace: it's put
   away and brought back with it, exactly where you left it and in front of the tiles, even on another
   monitor. `Win+T` puts it back in its own workspace's row.
+- **`Win+T` on a tile unlinks it**: it leaves its workspace and is a normal window again.
 - There's also a **scratchpad** (`Win+S`): a workspace with no home monitor that pops up on whatever
   monitor your mouse is on, and disappears again on the next press.
 
@@ -133,7 +134,7 @@ How the row is laid out:
 The scratchpad is a roaming workspace with no home monitor: `Win+S` shows it (and its tiles) on
 whatever monitor your mouse is on; `Win+S` again hides it and restores that monitor's previous
 workspace. Add a window to it the same way as to any workspace — focus the window while the
-scratchpad is shown and press `Win+Space`.
+scratchpad is shown and press `Win+T`.
 
 ### Focus, close, and move workspaces between monitors
 
@@ -203,7 +204,7 @@ them yourself from a terminal):
 | `winlandctl movetoworkspace <n>` | Move the focused window to workspace `n` (as a tile) and follow it. |
 | `winlandctl link-here` | Tile the focused window into the workspace shown on its monitor. |
 | `winlandctl unlink` | Unlink the focused window from its workspace — a normal window again. |
-| `winlandctl toggle-float` | Pop the focused tile out of its row, or put a floating window back into its own workspace's row. |
+| `winlandctl toggle-tile` | Tile the focused window: a normal window into the workspace on its monitor, a floating one back into its own workspace's row. On a tile: unlink it. |
 | `winlandctl scratchpad` | Toggle the roaming scratchpad on the monitor under the mouse. |
 | `winlandctl workspace-release` | Release the current workspace from its monitor. |
 | `winlandctl focus left\|right\|up\|down` | Focus the next tile (`left`/`right`, scrolling) or the nearest window in that direction. |
@@ -231,7 +232,6 @@ Apps opened by a shortcut appear on the **monitor under the mouse**, as a **tile
 shown there (fixed-size dialogs such as Run are placed but not tiled): plain shell-command binds do this
 automatically, and `launch-or-focus` / `launch-web` call `winlandctl place-next-window` before they
 launch. A script of your own can do the same.
-- `show-desktop.ps1` — minimize all windows (like the native `Win+D`).
 
 Drop your own `foo.ps1` next to the exe and reference it as `bind = … foo <args>` — no rebuild needed.
 
@@ -247,9 +247,8 @@ bind = SUPER SHIFT 1, winlandctl movetoworkspace 1
 bind = SUPER SHIFT 2, winlandctl movetoworkspace 2
 
 # Tile / unlink the focused window, and move a tile along its row
-bind = SUPER SPACE, winlandctl link-here
+bind = SUPER T, winlandctl toggle-tile
 bind = SUPER SHIFT SPACE, winlandctl unlink
-bind = SUPER T, winlandctl toggle-float
 bind = SUPER SHIFT LEFT, winlandctl move-window left
 bind = SUPER SHIFT RIGHT, winlandctl move-window right
 
@@ -258,11 +257,9 @@ bind = SUPER LEFT, winlandctl focus left
 bind = SUPER W, winlandctl close
 bind = SUPER SHIFT W, winlandctl workspace-release
 
-# Apps and Windows shortcuts
+# Apps (Win combos not bound keep their Windows meaning: Win+E, Win+D, ...)
 bind = SUPER RETURN, launch-or-focus wt.exe WindowsTerminal -- -d E:\WinLand
 bind = SUPER SHIFT B, firefox
-bind = SUPER E, explorer.exe
-bind = SUPER D, show-desktop
 ```
 
 ---
@@ -344,26 +341,25 @@ floats instead.)
 
 ## Why it needs Administrator
 
-Winland and its keys helper run **elevated**, for two reasons:
-
-1. **Hotkeys over elevated windows.** A normal (medium-integrity) keyboard hook can't intercept input
-   destined for an elevated window. If you run, say, Visual Studio as Administrator, `Win+3` would
-   otherwise fall through to it as a literal "3". Likewise, `winland` can only minimize/restore/
-   focus elevated windows because it is elevated itself.
-2. **Reclaiming `Win`+`<number>`.** By default Windows uses `Win`+`<number>` to launch pinned taskbar
-   apps. On startup `winland-keys` sets the **`NoWinKeys`** policy
-   (`HKCU\…\Policies\Explorer\NoWinKeys = 1`) so the shell stops owning those combos; if it had to
-   change the value it **restarts Explorer once** (asking it to exit cleanly first) so it takes effect
-   immediately.
+Winland and its keys helper run **elevated**, because a normal (medium-integrity) keyboard hook can't
+intercept input destined for an elevated window. If you run, say, Visual Studio as Administrator,
+`Win+3` would otherwise fall through to it as a literal "3". Likewise, `winland` can only
+minimize/restore/focus elevated windows because it is elevated itself.
 
 **The apps you launch do NOT inherit that elevation.** Binds run their commands and helper scripts
 with your normal user token (borrowed from the desktop shell), so Firefox, VS Code, the terminal etc.
 start unelevated, exactly as if you had launched them yourself. Only if that route is unavailable
 (e.g. Explorer isn't running) does a launch fall back to the elevated token.
 
-This intentionally suppresses Windows' built-in Win-key shortcuts while Winland is set up. It's
-reversible — clear the `NoWinKeys` value (set it to `0` or delete it; see `NoWinKeys.reg`) and restart
-Explorer to restore the defaults.
+**Windows' own Win-key shortcuts keep working.** The keys helper swallows only the combos bound in
+`config.conf` (so `Win`+`<number>` switches workspaces instead of launching taskbar apps); every other
+Win combo keeps its Windows meaning, and when Winland isn't running all of them work as usual. Winland
+changes no system setting for this, so there is nothing to undo when it exits or crashes.
+
+Earlier versions instead turned off *all* of Windows' Win-key shortcuts with the `NoWinKeys` policy
+(`HKCU\…\Policies\Explorer\NoWinKeys = 1`), which stayed in effect after Winland closed. If that
+value is still set, `winland-keys` removes it on startup and restarts Explorer once (asking it to exit
+cleanly first) so the shortcuts come back immediately.
 
 ---
 
@@ -430,9 +426,9 @@ src/
     KeyboardHook.cs                       global low-level Win-key hook (dedicated thread)
     Config.cs / HotkeyConfig.cs           read config.conf, parse "bind" lines
     AppLauncher.cs                        run a bind's command (script / sibling .exe / shell)
-    WindowsHotkeyDisabler.cs              set NoWinKeys so the shell ignores Win+<key>
+    WindowsHotkeyRestorer.cs              remove the NoWinKeys policy earlier versions set
     config.conf                           the shortcut bindings you edit
-    launch-or-focus.ps1 / launch-web.ps1 / launch-or-focus-web.ps1 / show-desktop.ps1
+    launch-or-focus.ps1 / launch-web.ps1 / launch-or-focus-web.ps1
   winland-indicator/                      companion: per-monitor on-screen workspace circles (unelevated)
     IndicatorApp.cs                       one window per monitor, display changes, dock persistence, workspace moves
     IndicatorWindow.cs                    one circle: layered rendering, docking, reporting drags

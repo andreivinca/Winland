@@ -55,7 +55,7 @@ internal sealed class WinlandApp : ApplicationContext
         "  winlandctl movetoworkspace <n>    move the focused window to n (as a tile)\n" +
         "  winlandctl link-here              tile the focused window in the workspace on its monitor\n" +
         "  winlandctl unlink                 stop tiling the focused window (a normal window again)\n" +
-        "  winlandctl toggle-float           pop the focused tile out of its row, or put it back\n" +
+        "  winlandctl toggle-tile            tile the focused window, or unlink it if it's a tile\n" +
         "  winlandctl scratchpad             toggle the roaming scratchpad on the mouse's monitor\n" +
         "  winlandctl focus left|right|up|down   (left/right step through and scroll a tile strip)\n" +
         "  winlandctl move-window left|right move the focused tile along its strip / to the next monitor\n" +

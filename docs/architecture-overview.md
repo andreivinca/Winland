@@ -81,7 +81,7 @@ For unclaimed combos (`actionId == 0`) the hook passes the key through to the OS
 - Runs `KeysApp` as a WinForms `ApplicationContext`.
 
 ### 3.2 `KeysApp`
-- On startup sets the `NoWinKeys` policy (`WindowsHotkeyDisabler.EnsureDisabled`).
+- On startup removes a `NoWinKeys` policy left by earlier versions (`WindowsHotkeyRestorer.RestoreIfDisabled`).
 - Loads `config.conf` (`Config.Load`) and parses binds (`HotkeyConfig.Parse`).
 - Owns the `KeyboardHook` (resolver + dispatcher callbacks). Headless — no tray icon; startup
   status goes to the log.
@@ -164,8 +164,8 @@ It has **no keyboard hook**: every action originates from the pipe.
     moment a dragged circle enters another monitor; `ERR` when no such monitor is attached.
   - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace` (tile it)
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
-  - `toggle-float` → `WorkspaceManager.ToggleFloating` (pop a tile out of its strip, or put a floating
-    window back into its own workspace's strip)
+  - `toggle-tile` → `WorkspaceManager.ToggleTiling` (tile a normal window, put a floating one back into
+    its own workspace's strip, or unlink a tile)
   - `scratchpad` → `WorkspaceManager.ToggleScratchpad`
   - `workspace-release` → `WorkspaceManager.ReleaseCurrentWorkspace`
   - `focus <left|right|up|down>` → `WorkspaceManager.FocusAdjacentTile` (left/right within a tile
@@ -245,10 +245,12 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 ### 6.2 Event channel (`Ipc.EventsPipeName`)
 - Transport: a second local named pipe, `\\.\pipe\winland-events`, outbound only and never read
   from. Same ACL, so unelevated subscribers can attach.
-- One message is one line: space-separated `<device>=<workspace>` pairs, ordered left-to-right, e.g.
-  `\\.\DISPLAY1=3 \\.\DISPLAY2=5`. Device names are the stable GDI names and contain no spaces; the
-  workspace is the raw int — `0` = the monitor shows nothing, `int.MaxValue` = the scratchpad. The
-  client decides how to render those (the indicator draws `–` and `S`).
+- One message is one line: space-separated `<device>=<shown>:<homed>` entries, ordered left-to-right,
+  e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. Device names are the stable GDI names and contain no
+  spaces; `shown` is the raw int on screen — `0` = the monitor shows nothing, `int.MaxValue` = the
+  scratchpad — and `homed` the ascending, comma-separated workspaces homed there (possibly empty).
+  `MonitorWorkspaces` writes and reads it; the client decides how to render it (the indicator lists
+  `1 4`, `1 4 S` with the on-screen one in white, or `–`).
 - A subscriber receives the current snapshot immediately on connect and a fresh one after each
   workspace change, so connecting before or after `winland` starts converges to the same state.
   After ~30 s without a change the current line is re-sent, which is how a subscriber that
@@ -301,7 +303,8 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 5. **Dedicated hook thread** for callback responsiveness.
 6. **Command-resolution launcher** (script / sibling exe / shell) for extensible binds without
    recompiling — and the mechanism by which the keys daemon reaches `winlandctl`.
-7. **Policy-based Win hotkey suppression** (`NoWinKeys`) to avoid shell conflicts.
+7. **Hook-only Win hotkey ownership** — bound combos are swallowed by the hook; no system policy is
+   changed, so Windows' other Win shortcuts keep working and nothing needs restoring on exit.
 8. **Elevation stops at Winland and its hook** — launched apps get the user's normal token
    (`UnelevatedLauncher`), the pipe ACL admits unelevated callers (`winlandctl`, the indicator's
    workspace moves), and the indicator is started unelevated.

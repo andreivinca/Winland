@@ -51,7 +51,7 @@ internal sealed class IndicatorApp : ApplicationContext
 
     // The last snapshot Winland sent, by device name. Monitors missing from it (a fresh
     // display, or no Winland yet) show the "no workspace" glyph.
-    private IReadOnlyDictionary<string, int> _workspaces = new Dictionary<string, int>();
+    private IReadOnlyDictionary<string, MonitorWorkspaces> _workspaces = new Dictionary<string, MonitorWorkspaces>();
 
     // The drag in effect: from the press until Winland shows where it left its workspace. Null otherwise.
     private WorkspaceDrag? _drag;
@@ -86,10 +86,10 @@ internal sealed class IndicatorApp : ApplicationContext
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _poster.Post(SyncMonitors);
 
     /// <summary>A fresh snapshot (UI thread): it may be the one a released drag waits for.</summary>
-    private void ApplySnapshot(IReadOnlyDictionary<string, int> snapshot)
+    private void ApplySnapshot(IReadOnlyDictionary<string, MonitorWorkspaces> snapshot)
     {
         _workspaces = snapshot;
-        if (_drag != null && _drag.IsSettled(WorkspaceOn(_drag.Carrier)))
+        if (_drag != null && _drag.IsSettled(MonitorOf(_drag.Carrier).Shown))
         {
             FinishDrag();
             return;
@@ -98,10 +98,11 @@ internal sealed class IndicatorApp : ApplicationContext
         ShowCircles();
     }
 
-    private int WorkspaceOn(string device) => _workspaces.TryGetValue(device, out int workspace) ? workspace : 0;
+    private MonitorWorkspaces MonitorOf(string device) =>
+        _workspaces.TryGetValue(device, out MonitorWorkspaces? monitor) ? monitor : new MonitorWorkspaces(device, 0, []);
 
     /// <summary>
-    /// Give every circle its place and glyph: the workspace the latest snapshot says its monitor shows, at
+    /// Give every circle its place and contents: the workspaces the latest snapshot lists for its monitor, at
     /// its dock — adjusted by the drag in effect (<see cref="WorkspaceDrag"/>), whose carrier docks for the
     /// <paramref name="cursor"/> when there is one. Circles that disappear are drawn first, so a workspace
     /// never shows on two circles, not even for a frame.
@@ -109,33 +110,35 @@ internal sealed class IndicatorApp : ApplicationContext
     private void ShowCircles(Point? cursor = null)
     {
         var badges = _windows.Values.Select(window => BadgeOf(window, cursor)).ToList();
-        foreach ((IndicatorWindow window, DockState dock, int workspace, bool visible) in badges.OrderBy(b => b.Visible))
+        foreach ((IndicatorWindow window, DockState dock, MonitorWorkspaces monitor, bool visible) in badges.OrderBy(b => b.Visible))
         {
-            window.ShowBadge(dock, workspace, visible);
+            window.ShowBadge(dock, WorkspaceStack.Items(monitor), visible);
         }
     }
 
-    private (IndicatorWindow Window, DockState Dock, int Workspace, bool Visible) BadgeOf(IndicatorWindow window, Point? cursor)
+    private (IndicatorWindow Window, DockState Dock, MonitorWorkspaces Monitor, bool Visible) BadgeOf(IndicatorWindow window, Point? cursor)
     {
-        int shown = WorkspaceOn(window.Device);
+        MonitorWorkspaces reported = MonitorOf(window.Device);
         if (_drag == null)
         {
-            return (window, window.DockPosition, shown, true);
+            return (window, window.DockPosition, reported, true);
         }
 
-        (int workspace, bool visible) = _drag.Badge(window.Device, shown);
+        (MonitorWorkspaces monitor, bool visible) = _drag.Badge(reported);
         DockState dock = !_drag.IsCarrier(window.Device) ? _drag.DockAtPress(window.Device, window.DockPosition)
-            : cursor is Point at ? window.DockFor(at)
+            : cursor is Point at ? window.DockFor(at, _drag.Grab)
             : window.DockPosition;
-        return (window, dock, workspace, visible);
+        return (window, dock, monitor, visible);
     }
 
-    /// <summary>A circle was pressed: a drag of what it shows begins.</summary>
-    private void StartDrag(IndicatorWindow pressed)
+    /// <summary>A circle's grip was pressed at <paramref name="grab"/>: a drag of the workspace it shows on screen begins.</summary>
+    private void StartDrag(IndicatorWindow pressed, float grab)
     {
+        // What the circle shows right now — a drag still settling may show it ahead of the snapshot.
+        int shown = BadgeOf(pressed, null).Monitor.Shown;
         _settleTimeout.Stop(); // a newer drag replaces one still settling
-        _drag = new WorkspaceDrag(pressed.Device, pressed.Workspace,
-            _windows.Values.ToDictionary(w => w.Device, w => w.DockPosition));
+        _drag = new WorkspaceDrag(pressed.Device, shown,
+            _windows.Values.ToDictionary(w => w.Device, w => w.DockPosition)) { Grab = grab };
     }
 
     /// <summary>
@@ -171,7 +174,7 @@ internal sealed class IndicatorApp : ApplicationContext
 
         drag.Release();
         SaveDockPositions();
-        if (drag.IsSettled(WorkspaceOn(drag.Carrier)))
+        if (drag.IsSettled(MonitorOf(drag.Carrier).Shown))
         {
             FinishDrag();
             return;
@@ -214,7 +217,7 @@ internal sealed class IndicatorApp : ApplicationContext
             }
 
             var window = new IndicatorWindow(monitor, DockPositionOf(monitor.Device));
-            window.DragStarted += () => StartDrag(window);
+            window.DragStarted += grab => StartDrag(window, grab);
             window.DragMoved += MoveDrag;
             window.DragEnded += ReleaseDrag;
             _windows[monitor.Device] = window;

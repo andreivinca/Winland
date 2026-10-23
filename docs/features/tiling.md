@@ -6,11 +6,11 @@ Give the windows the user chooses a real tiled layout — Hyprland/niri-style �
 keeps behaving like a normal Windows window. Tiling is **opt-in per window**. A workspace member is
 either a **tile** or **floating**:
 
-- A window becomes a **tile** of a workspace by `Win+Space` (`link-here`), `Win+Shift+N`
+- A window becomes a **tile** of a workspace by `Win+T` (`toggle-tile`), `Win+Shift+N`
   (`movetoworkspace N`), or by being opened from a Winland shortcut (`place-next-window`, §4.1).
 - A tile the user **drags or resizes** with the mouse **floats**: it leaves the strip and Windows manages
   it where the user put it — even on another monitor — but it stays in its workspace (`_floating`). It
-  is put away and brought back with the workspace, in place. `Win+Space` tiles it again, at its old
+  is put away and brought back with the workspace, in place. `Win+T` tiles it again, at its old
   place in the strip.
 - `Win+Shift+Space` (`unlink`) removes a member from its workspace: a normal window again.
 - Winland never tiles, moves or resizes a window that belongs to no workspace on its own. Like everything
@@ -59,7 +59,7 @@ their place in the order but take no column.
 | --- | --- |
 | `link-here` | Link the focused window to the workspace shown on its monitor as a tile: a new member right after that workspace's focused tile, a floating member back at its old place. On one of its tiles: snap it back into its column. No-op on a monitor showing no workspace. |
 | `unlink` | Remove the focused window from its workspace; it stays where it is, in front, as a normal window. The strip closes the gap. |
-| `toggle-float` | On a tile: float it where it is (still a member) and close the gap — like a drag. On a floating member: re-tile it into its **own** workspace at its old place, from any monitor; if that workspace isn't shown, `workspace` is switched to it (the scratchpad, shown only by its toggle, is put away instead). On a window in no workspace: `link-here`. |
+| `toggle-tile` | On a window in no workspace: `link-here`. On a floating member: re-tile it into its **own** workspace at its old place, from any monitor; if that workspace isn't shown, `workspace` is switched to it (the scratchpad, shown only by its toggle, is put away instead). On a tile: `unlink`. |
 | `movetoworkspace n` | Re-link as a tile of `n` (after `n`'s focused tile), switch to `n`, focus it. The old workspace closes the gap if it is on screen. |
 | `focus left\|right` | On a tile: focus the neighbouring tile and scroll it into view. Past either end of the strip, on any other window, or for `up`/`down`: geometric `FocusNearest` (see `window-focus.md`). |
 | `move-window left\|right` | On a tile: trade places with the neighbour (`TileOrder.MoveTo`). At the end of the strip: join the workspace shown on the adjacent monitor in that direction, entering at the near end (no-op if it shows none). On any other window: `MoveWindowToMonitor` to the adjacent monitor, membership unchanged. |
@@ -77,7 +77,7 @@ minimizes all its windows, wherever they are.
 The viewport always keeps the workspace's focused tile (`_lastActive`) in view: every layout reveals it
 unless a command reveals another tile.
 
-After `link-here`, `toggle-float`, `movetoworkspace`, `focus` and `move-window`, the mouse is moved onto the focused
+After `link-here`, `toggle-tile`, `movetoworkspace`, `focus` and `move-window`, the mouse is moved onto the focused
 tile if focus or its position changed and the cursor isn't over it already (`CursorWarp`, see
 `window-focus.md` §3.6).
 
@@ -127,7 +127,7 @@ workspace shown there (`TileLaunchedWindow`). Windows opened any other way stay 
 - Maximizing a tile lasts until its workspace's next layout.
 - A tile the user minimizes leaves an empty column until the next layout restores it.
 - An app that repositions its own window just after opening can move a freshly launched tile out of its
-  column; `Win+Space` or `Win+N` puts it back.
+  column; `Win+T` or `Win+N` puts it back.
 - Column widths are not adjustable yet; the minimum width and gap are constants in `StripLayout`.
 - Only horizontal strips; no vertical stacking within a column.
 - Layout state (order, scroll position, floating) is in memory only, like all workspace state.

@@ -11,7 +11,7 @@
   self-contained (win-x64) into one folder so they share a single copy of the .NET runtime — Winland
   starts the companions from its own folder — then drops winlandctl (the tiny CLI the keys companion
   shells out to) and the auto-start installer beside them. winland-keys' own build already copies
-  config.conf and the launch-*/show-desktop helper scripts into its output, so those come along
+  config.conf and the launch-* helper scripts into its output, so those come along
   automatically.
 
 .PARAMETER Configuration

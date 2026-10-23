@@ -49,8 +49,9 @@ Primary users:
   - Later switches target that monitor.
   - Dragging the workspace's indicator circle onto another monitor moves the whole workspace there
     (re-homing it); the monitor it left goes back to the workspace it showed before.
-- A window joins a workspace only on explicit move (`Win+Shift+N`) or tile (`Win+Space`) — never as a
-  side effect of interacting with it — and leaves it only on unlink (`Win+Shift+Space`), a move, or
+- A window joins a workspace only on explicit move (`Win+Shift+N`) or tile (`Win+T`) — never as a
+  side effect of interacting with it — and leaves it only on unlink (`Win+Shift+Space`, or `Win+T` on a
+  tile), a move, or
   closing.
 - A workspace's windows are tiled in a row that shares the monitor and scrolls once they no longer
   fit; tiles never appear on another monitor. Windows that belong to no workspace keep normal
@@ -74,12 +75,11 @@ Primary users:
   - `launch-or-focus.ps1`
   - `launch-web.ps1`
   - `launch-or-focus-web.ps1`
-  - `show-desktop.ps1`
 
-### 5.4 Re-registered Windows Shell Shortcuts
-- Because Winland disables native Win-key shell shortcuts (`NoWinKeys`), selected default Windows behaviors should be explicitly re-registered via config.
-- Current defaults include `Win+D` → `show-desktop`, `Win+E` → `explorer.exe`, `Win+R` → the Run
-  dialog (via its shell CLSID), and `Win+Shift+S` → `ms-screenclip:`.
+### 5.4 Windows Shell Shortcuts
+- Winland only takes over the Win combos bound in `config.conf`. Every other Win combo (`Win+E`,
+  `Win+R`, `Win+Shift+S`, `Win+V`, ...) keeps its normal Windows behavior, and all of them
+  work as usual whenever Winland is not running.
 
 ## 6. User Experience Requirements
 

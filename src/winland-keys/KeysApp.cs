@@ -21,8 +21,9 @@ internal sealed class KeysApp : System.Windows.Forms.ApplicationContext
 
     public KeysApp()
     {
-        // Turn off Windows' own Win+<key> hotkeys so the shell can't act on combos we own.
-        WindowsHotkeyDisabler.EnsureDisabled();
+        // The hook alone keeps the shell off the combos we bind; undo the NoWinKeys policy an earlier
+        // version set, which switched off every other Windows Win-key shortcut too.
+        WindowsHotkeyRestorer.RestoreIfDisabled();
 
         // Parse the binds BEFORE the hook goes live: the hook thread calls ResolveActionId from the
         // moment it is installed, so the binds must already exist by then.

@@ -64,25 +64,29 @@ internal sealed partial class WorkspaceManager : IDisposable
     private readonly List<IntPtr> _winEventHooks = new();
 
     /// <summary>
-    /// Raised (on the UI thread) with what EVERY live monitor is showing, whenever an operation may
-    /// have changed it. It feeds the broadcast event pipe, whose subscribers (the on-screen
-    /// indicator) draw one badge per monitor and therefore need all of them.
+    /// Raised (on the UI thread) with what EVERY live monitor is showing and which workspaces live on
+    /// it, whenever an operation may have changed either. It feeds the broadcast event pipe, whose
+    /// subscribers (the on-screen indicator) draw one badge per monitor and therefore need all of them.
     /// </summary>
-    public event Action<IReadOnlyList<(string Device, int Workspace)>>? WorkspacesChanged;
+    public event Action<IReadOnlyList<MonitorWorkspaces>>? WorkspacesChanged;
 
     /// <summary>
-    /// What each live monitor is showing, keyed by stable device name and ordered left-to-right. Raw
-    /// values: 0 = nothing shown, <see cref="ScratchpadWorkspace"/> = the scratchpad. A monitor that is
-    /// asleep (out of enumeration) is absent — it has nothing on screen to label.
+    /// Each live monitor, ordered left-to-right: what it is showing (raw: 0 = nothing,
+    /// <see cref="ScratchpadWorkspace"/> = the scratchpad) and the workspaces homed on it, ascending.
+    /// A monitor that is asleep (out of enumeration) is absent — it has nothing on screen to label.
     /// </summary>
-    public IReadOnlyList<(string Device, int Workspace)> WorkspaceSnapshot =>
+    public IReadOnlyList<MonitorWorkspaces> WorkspaceSnapshot =>
         _monitors.Values
             .OrderBy(m => m.Work.Left)
             .ThenBy(m => m.Work.Top)
-            .Select(m => (Device: m.Device, Workspace: m.Current))
+            .Select(m => new MonitorWorkspaces(m.Device, m.Current, _workspaceHome
+                .Where(home => home.Value == m.Device)
+                .Select(home => home.Key)
+                .Order()
+                .ToList()))
             .ToList();
 
-    // Every operation that can change what a monitor shows ends here.
+    // Every operation that can change what a monitor shows, or where a workspace is homed, ends here.
     private void NotifyWorkspaceChanges() => WorkspacesChanged?.Invoke(WorkspaceSnapshot);
 
     // Window events (foreground/minimize/move) are delivered asynchronously, so events triggered by
@@ -142,7 +146,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
     /// <summary>Home a workspace to each monitor (leftmost = 1, then 2, …). No window is assigned to any
     /// workspace at startup — membership is set only later, by moving (Win+Shift+N) or linking
-    /// (Win+Space) a window. So open apps start unlinked until you claim them.</summary>
+    /// (Win+T) a window. So open apps start unlinked until you claim them.</summary>
     private void Rebuild()
     {
         _monitors.Clear();
@@ -243,7 +247,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         // Put away everything on k's home monitor that isn't k's — unlinked windows too, so the monitor
         // shows only k — and the outgoing workspace's windows that float on other monitors. Membership is
-        // left alone — switching never links or unlinks a window; only move (Win+Shift+N), tile (Win+Space),
+        // left alone — switching never links or unlinks a window; only move (Win+Shift+N), tile (Win+T),
         // unlink (Win+Shift+Space), or closing does.
         MinimizeMonitorWindows(home, keep: k);
         if (!already && outgoing >= 1)
@@ -369,7 +373,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         if (n < 1 || n == ScratchpadWorkspace)
         {
-            return; // windows join the scratchpad via link (Win+Space) while it is shown
+            return; // windows join the scratchpad via link (Win+T) while it is shown
         }
 
         IntPtr hWnd = GetForegroundWindow();
@@ -406,7 +410,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     ///    previous workspace.
     ///  * Otherwise → bring the scratchpad (and its windows) onto the mouse monitor. If it was already up
     ///    on another monitor, that monitor is sent back to its previous workspace first.
-    /// Windows attach to the scratchpad like any workspace: focus one while it's shown and press Win+Space
+    /// Windows attach to the scratchpad like any workspace: focus one while it's shown and press Win+T
     /// (tile it there). Its tiles are laid out on whichever monitor it appears on.
     /// </summary>
     public void ToggleScratchpad()
@@ -777,7 +781,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         // FOREGROUND: track each workspace's last-focused window (for focus restore on switch), and scroll a
         // strip to a tile focused by hand. Tiling adds DESTROY/SHOW/HIDE and MOVESIZEEND (InstallTileHooks).
         //
-        // No hook mutates membership. Membership is changed only by Win+Shift+N (move), Win+Space (tile) and
+        // No hook mutates membership. Membership is changed only by Win+Shift+N (move), Win+T (tile) and
         // Win+Shift+Space (unlink); closed windows are pruned lazily and race-free in WindowsOf (see below).
         // EVENT_OBJECT_DESTROY is delivered asynchronously on this (sometimes stalled) thread, so during a
         // sleep/wake window-churn a backlogged DESTROY can carry a recycled HWND that now belongs to a

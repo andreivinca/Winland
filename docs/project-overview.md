@@ -18,12 +18,12 @@ one app, **`winland`**, which runs two companion processes and ends them when it
 Current core capabilities:
 - Per-monitor numbered workspaces (unbounded; `1..9` and `11..19` bound by default), plus a roaming
   scratchpad (`Win+S`)
-- Opt-in scrolling tiling: tiling a window (`Win+Space`) or moving it to a workspace (`Win+Shift+N`)
+- Opt-in scrolling tiling: tiling a window (`Win+T`) or moving it to a workspace (`Win+Shift+N`)
   makes it a tile in that workspace's row, which shares the monitor and scrolls once tiles no longer
   fit. Membership changes only on these explicit actions; every other window stays a normal window
   that Winland never tiles (it is still put away when its monitor switches workspace)
 - Directional nearest-window focus (`Win+Arrows`), focus-or-launch by process, foreground close
-  (`Win+W`), and show-desktop (`Win+D`)
+  (`Win+W`)
 - Configurable app shortcuts from text config (`config.conf`), launched with the user's normal
   (unelevated) token
 - A per-monitor on-screen workspace indicator: a draggable, edge-docked translucent circle that
@@ -63,7 +63,8 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 ### 5.1 Workspaces
 - `Win+1..9` switches/focuses a workspace (`winlandctl workspace N`); `Win+Alt+1..9` reaches 11..19.
 - `Win+Shift+N` moves the focused window to workspace N as a tile (`winlandctl movetoworkspace N`);
-  `Win+Space` tiles it into the current workspace (`winlandctl link-here`), `Win+Shift+Space` makes it
+  `Win+T` tiles it into the current workspace, or unlinks it if it is a tile (`winlandctl toggle-tile`);
+  `Win+Shift+Space` makes it
   a normal window again (`winlandctl unlink`). See `docs/features/tiling.md`.
 - `Win+Left/Right` step through and scroll a tile row; `Win+Shift+Left/Right` move a tile along it
   (`winlandctl move-window left|right`).
@@ -78,7 +79,6 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 - `winlandctl focus-app <process>` focuses an app's window by process name (used by the
   launch-or-focus binds).
 - `Win+W` sends a close request to the foreground window (`winlandctl close`).
-- `Win+D` minimizes every window (the `show-desktop.ps1` script).
 
 ### 5.3 On-Screen Workspace Indicator
 - One translucent circle per monitor showing that monitor's workspace (number, "S" for the
@@ -114,7 +114,7 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 
 Files packaged next to `winland-keys.exe`:
 - `config.conf`
-- `launch-or-focus.ps1`, `launch-web.ps1`, `launch-or-focus-web.ps1`, `show-desktop.ps1`
+- `launch-or-focus.ps1`, `launch-web.ps1`, `launch-or-focus-web.ps1`
 - `winlandctl.exe` (copied beside the keys daemon by its build, so binds can run it)
 
 All of them sit next to `winland.exe`: building `src/winland` copies its companions' output there.
@@ -149,7 +149,7 @@ src/winland/          WinlandApp.cs, Companions.cs,         the main app (pipe-d
                       WindowNavigator.cs, TrayIcon.cs
 src/winland-keys/     KeysApp.cs, KeyboardHook.cs,          companion: hotkey daemon (the only keyboard hook)
                       Config.cs, HotkeyConfig.cs,
-                      AppLauncher.cs, WindowsHotkeyDisabler.cs
+                      AppLauncher.cs, WindowsHotkeyRestorer.cs
 src/winland-indicator/ IndicatorApp.cs, IndicatorWindow.cs, companion: workspace circles (unelevated)
                       EventClient.cs, UiPoster.cs, DockState.cs,
                       WorkspaceDrag.cs, LatestRequestSender.cs

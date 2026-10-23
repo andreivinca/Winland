@@ -9,40 +9,48 @@ using Winland.Common;
 namespace Winland.Keys;
 
 /// <summary>
-/// Feature: turn off Windows' own Win+&lt;key&gt; hotkeys so the shell can't act on combos Winland owns
-/// (notably Win+number launching taskbar apps). Sets the NoWinKeys policy; requires elevation.
+/// Migration: give Windows its own Win+&lt;key&gt; shortcuts back on machines where an earlier Winland
+/// turned them all off with the NoWinKeys policy.
+///
+/// Winland no longer needs that policy. The keyboard hook swallows every combo Winland binds before the
+/// shell sees it, so Windows can't act on those; every other Win combo (Win+V, Win+I, Win+Tab, Win+L…)
+/// keeps its normal Windows meaning, and when Winland isn't running all of them work as usual — there
+/// is nothing to put back on exit. The policy, by contrast, outlived Winland and only took effect (in
+/// either direction) after an Explorer restart.
 /// </summary>
-internal static class WindowsHotkeyDisabler
+internal static class WindowsHotkeyRestorer
 {
+    private const string PolicyKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer";
+    private const string PolicyValueName = "NoWinKeys";
+
     /// <summary>
-    /// Ensure the NoWinKeys policy is set. If it had to be changed, restart Explorer so it takes
-    /// effect immediately (otherwise it's a no-op). No-ops silently if the key is locked (e.g. by org).
+    /// If the NoWinKeys policy is on for this user, remove it and restart Explorer once so the shell's
+    /// shortcuts come back immediately. A no-op when it's already off; logged if the key is locked.
     /// </summary>
-    public static void EnsureDisabled()
+    public static void RestoreIfDisabled()
     {
         try
         {
-            using RegistryKey key = Registry.CurrentUser.CreateSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Policies\Explorer");
-
-            if (key.GetValue("NoWinKeys") is int v && v == 1)
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(PolicyKeyPath, writable: true);
+            if (key?.GetValue(PolicyValueName) is not int value || value == 0)
             {
-                return; // already disabled
+                return; // Windows' Win-key shortcuts are already on
             }
 
-            key.SetValue("NoWinKeys", 1, RegistryValueKind.DWord);
+            key.DeleteValue(PolicyValueName);
+            Log.Line("removed the NoWinKeys policy left by an earlier Winland; restarting Explorer");
             RestartExplorer();
         }
         catch (Exception ex)
         {
             // e.g. the policy key is org-locked even for admins.
-            Log.Line($"NoWinKeys policy not set: {ex.Message}");
+            Log.Line($"NoWinKeys policy not removed: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// Restart the shell so it re-reads the policy. Happens at most once, when the policy value
-    /// actually changed. Explorer is asked to exit CLEANLY first (the same message as the taskbar's
+    /// Restart the shell so it re-reads the policy. Happens at most once, when the policy was
+    /// actually removed. Explorer is asked to exit CLEANLY first (the same message as the taskbar's
     /// Ctrl+Shift+right-click "Exit Explorer"), so it saves its state; killing is only the fallback.
     /// Windows itself restarts the exited shell (AutoRestartShell, on by default) with the user's
     /// normal token — we start one ourselves only if that doesn't happen.

@@ -9,7 +9,8 @@ namespace Winland.Indicator;
 
 /// <summary>
 /// The subscriber half of winland's event channel: a background thread that stays connected to
-/// <see cref="Ipc.EventsPipeName"/>, parses each snapshot line into "device → workspace", and hands it
+/// <see cref="Ipc.EventsPipeName"/>, parses each snapshot line into "device → what it shows and which
+/// workspaces live there", and hands it
 /// to the UI through the callback it was given (the caller is responsible for marshalling).
 ///
 /// Winland is treated as optional, not required: it may not be running yet, and it may be
@@ -20,12 +21,12 @@ internal sealed class EventClient : IDisposable
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
-    private readonly Action<IReadOnlyDictionary<string, int>> _onSnapshot;
+    private readonly Action<IReadOnlyDictionary<string, MonitorWorkspaces>> _onSnapshot;
     private readonly CancellationTokenSource _cts = new();
     private readonly Thread _thread;
     private bool _disposed;
 
-    public EventClient(Action<IReadOnlyDictionary<string, int>> onSnapshot)
+    public EventClient(Action<IReadOnlyDictionary<string, MonitorWorkspaces>> onSnapshot)
     {
         _onSnapshot = onSnapshot;
         _thread = new Thread(Loop) { IsBackground = true, Name = "WinlandIndicatorEventClient" };
@@ -48,7 +49,7 @@ internal sealed class EventClient : IDisposable
                 using var reader = new StreamReader(pipe);
                 while (reader.ReadLineAsync(_cts.Token).AsTask().GetAwaiter().GetResult() is string line)
                 {
-                    _onSnapshot(Parse(line));
+                    _onSnapshot(MonitorWorkspaces.Parse(line));
                 }
             }
             catch (OperationCanceledException)
@@ -67,26 +68,6 @@ internal sealed class EventClient : IDisposable
                 break;
             }
         }
-    }
-
-    /// <summary>
-    /// Read one snapshot line — space-separated "&lt;device&gt;=&lt;workspace&gt;" pairs (the grammar
-    /// is documented on <see cref="Ipc.EventsPipeName"/>). Unparsable pairs are skipped rather than
-    /// failing the whole line, so a future field can be added to the protocol without breaking us.
-    /// </summary>
-    private static Dictionary<string, int> Parse(string line)
-    {
-        var snapshot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (string pair in line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            int separator = pair.LastIndexOf('=');
-            if (separator > 0 && int.TryParse(pair.AsSpan(separator + 1), out int workspace))
-            {
-                snapshot[pair[..separator]] = workspace;
-            }
-        }
-
-        return snapshot;
     }
 
     public void Dispose()

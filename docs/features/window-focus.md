@@ -18,7 +18,7 @@ Defined as `config.conf` binds (not hardcoded), each running a `winlandctl` verb
 - `Win+Down` → `winlandctl focus down` → focus nearest window below
 - `Win+W` → `winlandctl close` → close foreground window (`WM_CLOSE`)
 - `winlandctl focus-app <process>` has no direct bind: `launch-or-focus.ps1` calls it (see
-  `app-shortcuts.md`, which also covers the `show-desktop.ps1` script behind `Win+D`).
+  `app-shortcuts.md`).
 
 The directional/close combos ship as plain Win combos (no Shift/Alt/Ctrl).
 
@@ -73,7 +73,7 @@ Selection rule:
 - The `Dispatcher` then moves the mouse to the newly focused window (§3.6).
 
 ### 3.6 The Mouse Follows Focus (`CursorWarp`)
-`focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-float` and `movetoworkspace` run through
+`focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-tile` and `movetoworkspace` run through
 `Dispatcher.FollowedByCursor`: it records the foreground window and its visible frame (DWM extended
 frame bounds) before the command, and afterwards — if the foreground window or its frame changed and
 the cursor isn't already over it (`WindowFromPoint` → root) — calls `SetCursorPos` on the centre of its

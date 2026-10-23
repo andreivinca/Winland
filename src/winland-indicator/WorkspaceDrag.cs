@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Winland.Common;
 
 namespace Winland.Indicator;
@@ -15,10 +16,11 @@ namespace Winland.Indicator;
 /// monitor, it moves back. A drag of the dash or of the scratchpad's "S" carries nothing and stays with its
 /// own circle.
 ///
-/// While the drag is in effect, the carrier shows the carried workspace and any other circle the latest
-/// snapshot still credits with it shows nothing (<see cref="Badge"/>): the workspace is never on two
-/// circles at once, even before Winland's snapshot catches up. After the release it stays in effect until
-/// the snapshot shows the workspace where the drag left it (<see cref="IsSettled"/>).
+/// While the drag is in effect, the carrier lists the carried workspace as the one on screen, and every
+/// other circle drops it — one the latest snapshot still credits with showing it shows nothing at all
+/// (<see cref="Badge"/>): the workspace is never on two circles at once, even before Winland's snapshot
+/// catches up. After the release it stays in effect until the snapshot shows the workspace where the drag
+/// left it (<see cref="IsSettled"/>).
 /// </summary>
 internal sealed class WorkspaceDrag
 {
@@ -36,6 +38,12 @@ internal sealed class WorkspaceDrag
 
     /// <summary>The numbered workspace this drag carries, or 0 when it carries nothing.</summary>
     public int Workspace { get; }
+
+    /// <summary>
+    /// Where the grip was pressed: the 96-DPI distance from the badge's leading end, kept under the cursor
+    /// by whichever circle carries the drag.
+    /// </summary>
+    public float Grab { get; init; }
 
     /// <summary>The monitor whose circle the drag moves.</summary>
     public string Carrier { get; private set; }
@@ -63,17 +71,23 @@ internal sealed class WorkspaceDrag
     public void Release() => Released = true;
 
     /// <summary>
-    /// What <paramref name="device"/>'s circle shows during the drag, given the workspace
-    /// (<paramref name="shown"/>) the latest snapshot says its monitor shows.
+    /// What <paramref name="monitor"/>'s circle shows during the drag, given what the latest snapshot says
+    /// about that monitor. The carrier predicts what Winland will report once the move lands: the carried
+    /// workspace homed and on screen there, the one it showed before still homed there.
     /// </summary>
-    public (int Workspace, bool Visible) Badge(string device, int shown)
+    public (MonitorWorkspaces Monitor, bool Visible) Badge(MonitorWorkspaces monitor)
     {
         if (Workspace == 0)
         {
-            return (shown, true);
+            return (monitor, true);
         }
 
-        return IsCarrier(device) ? (Workspace, true) : (shown, shown != Workspace);
+        if (IsCarrier(monitor.Device))
+        {
+            return (monitor with { Shown = Workspace, Homed = monitor.Homed.Append(Workspace).Distinct().Order().ToList() }, true);
+        }
+
+        return (monitor with { Homed = monitor.Homed.Where(w => w != Workspace).ToList() }, monitor.Shown != Workspace);
     }
 
     /// <summary>

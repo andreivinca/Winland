@@ -15,7 +15,9 @@ Example from shipped config:
 - `bind = SUPER RETURN, launch-or-focus wt.exe WindowsTerminal -- -d E:\WinLand`
 - `bind = SUPER SHIFT M, launch-or-focus spotify`
 - `bind = SUPER SHIFT A, launch-or-focus-web https://gemini.google.com`
-- `bind = SUPER D, show-desktop`
+
+Win combos with no bind keep their Windows meaning (`Win+D`, `Win+E`, …): the keys hook only
+swallows bound combos.
 
 ### 2.2 Parser Responsibilities
 - `Config` reads file and yields `(keyword, value)` entries.
@@ -88,8 +90,7 @@ Launch errors are logged and otherwise ignored, to preserve daemon stability.
 ## 5. Bundled Script Verbs
 
 The scripts run unelevated (§4.5). Window work that must reach elevated windows lives in
-`winland`, reached through `winlandctl` (whose pipe accepts unelevated callers); script-local
-window work (e.g. `show-desktop.ps1`) is subject to UIPI and leaves elevated apps' windows alone.
+`winland`, reached through `winlandctl` (whose pipe accepts unelevated callers).
 
 ## 5.1 `launch-or-focus.ps1`
 Goal:
@@ -129,17 +130,6 @@ Behavior summary:
   browser windows carry the browser's id — so only that URL's app window matches.
 - Exit code 0 means it was focused — done. Otherwise (none open, already foreground, `winland`
   not running) it runs `launch-web.ps1 <url>`.
-
-## 5.3 `show-desktop.ps1`
-Goal:
-- Mimic native `Win+D` behavior by minimizing all eligible top-level desktop windows.
-
-Behavior summary:
-- Enumerates top-level windows (Win32 via `Add-Type`).
-- Skips non-eligible windows (hidden, already minimized, owned/tool windows, shell desktop/taskbar
-  classes, cloaked, untitled).
-- Minimizes eligible windows via `ShowWindow(..., SW_MINIMIZE)`.
-- Runs unelevated, so windows of elevated apps stay up (UIPI).
 
 ## 6. No Built-in Actions / Bind Precedence
 

@@ -21,7 +21,7 @@
   `winland-indicator` deliberately has **none** (asInvoker), and sets
   `ApplicationHighDpiMode = PerMonitorV2` (so does `winland`).
 - `winland-keys` copies to its output (`PreserveNewest`): `config.conf`, `launch-or-focus.ps1`,
-  `launch-web.ps1`, `launch-or-focus-web.ps1`, `show-desktop.ps1`.
+  `launch-web.ps1`, `launch-or-focus-web.ps1`.
 - **`winland-keys` must place `winlandctl.exe` (plus its `.dll`, `.runtimeconfig.json`,
   `.deps.json`) next to `winland-keys.exe`** — the keys daemon resolves `winlandctl` as a sibling
   exe. This is done by a build target (`CopyWinlandctl`) in `winland-keys.csproj`; without it, every
@@ -46,7 +46,7 @@
 - **`winland-keys`** — `Program.Main` (single-instance mutex) runs `KeysApp`, which composes
   `KeyboardHook`, `Config` + `HotkeyConfig`, `AppLauncher` + `UnelevatedLauncher` (from
   `Winland.Common`), and
-  `WindowsHotkeyDisabler`. It owns the only keyboard hook and has no workspace/focus logic. Binds
+  `WindowsHotkeyRestorer`. It owns the only keyboard hook and has no workspace/focus logic. Binds
   are parsed before the hook is installed (the hook thread resolves combos from the moment it is live).
 - **`winland`** — `Program.Main` runs `WinlandApp`, which composes `WorkspaceManager`,
   `WindowNavigator` (static), `Dispatcher`, `UiInvoker`, `DispatchServer`, `EventServer`, and
@@ -124,7 +124,7 @@ on the command pipe.
 - `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected),
   `move-workspace <n> <device>` (same rule for n; `ERR` when no monitor with that device name is
   attached), `link-here`,
-  `unlink`, `toggle-float`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
+  `unlink`, `toggle-tile`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
   `move-window <left|right>`, `focus-app <process>`,
   `focus-web <url>`, `close`,
   `place-next-window` (the next new app window opens on the monitor under the mouse);
@@ -139,10 +139,12 @@ on the command pipe.
 - Transport: a local named pipe, `\\.\pipe\winland-events`, `PipeDirection.Out`, byte mode,
   asynchronous, several server instances (8), created with the same user ACL so unelevated
   subscribers can attach. `winland` is the server; `winland-indicator` is the client.
-- Message grammar: one line per snapshot — space-separated `<device>=<workspace>` pairs, ordered
-  left-to-right, e.g. `\\.\DISPLAY1=3 \\.\DISPLAY2=5`. The device is the stable GDI display name
-  (contains no space); the workspace is the raw int: `0` = the monitor shows no workspace,
-  `int.MaxValue` = the scratchpad. Rendering those as "–"/"S" is the client's job.
+- Message grammar: one line per snapshot — space-separated `<device>=<shown>:<homed>` entries, ordered
+  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. The device is the stable GDI display name
+  (contains no space); `shown` is the raw int: `0` = the monitor shows no workspace,
+  `int.MaxValue` = the scratchpad; `homed` is the ascending, comma-separated list of workspaces homed
+  on that monitor (possibly empty). Written and read only by `Winland.Common.MonitorWorkspaces`.
+  Rendering is the client's job.
 - Delivery contract: the current snapshot is written immediately on connect, then a new snapshot line
   after every workspace change. Only the **latest** snapshot is ever sent — intermediate states a slow
   subscriber missed are not replayed. After ~30 s without a change the current line is re-sent, so a
@@ -253,7 +255,7 @@ Z-order predecessors; not minimized per its window placement.
 - `close` posts `WM_CLOSE` to the foreground window.
 
 ### 7.5 The Mouse Follows Focus
-- After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-float` and `movetoworkspace`, if the
+- After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-tile` and `movetoworkspace`, if the
   foreground window or its visible frame changed and the cursor isn't over it, move the cursor to the
   centre of its frame (`CursorWarp`).
 - After showing a workspace (`workspace`, `scratchpad` on/off), move the cursor to the centre of the
@@ -291,8 +293,6 @@ Z-order predecessors; not minimized per its window placement.
 - `launch-web.ps1` — resolve Chrome/Chromium and launch `--app=<url>` (always a new window).
 - `launch-or-focus-web.ps1` — `winlandctl focus-web <url>`; on any failure (no window, already
   foreground, env not running) run `launch-web.ps1 <url>`.
-- `show-desktop.ps1` — minimize all eligible top-level windows (mimics `Win+D`). Runs unelevated,
-  so elevated apps' windows are left alone (UIPI).
 
 ## 9. Tray and UX Integration Requirements
 
@@ -317,8 +317,8 @@ Z-order predecessors; not minimized per its window placement.
 - Left-drag moves it **along the docked edge only**; motion perpendicular to that edge is ignored.
 - During a drag, the edge of the work area nearest the cursor becomes the docked edge **only** if the
   cursor is within the dock threshold (~80 px at 96 DPI) of it; otherwise the current edge stands.
-- The circle centres on the cursor's coordinate parallel to the docked edge, clamped so it stays fully
-  inside the work area — a circle never leaves its monitor.
+- The circle keeps the grip point that was pressed under the cursor's coordinate parallel to the docked
+  edge, clamped so it stays fully inside the work area — a circle never leaves its monitor.
 
 **Moving a workspace by dragging its circle** (rules in `WorkspaceDrag`, unit-tested)
 - The pressed circle keeps the mouse (capture) for the whole drag; the circle the drag moves (the
@@ -344,7 +344,7 @@ Z-order predecessors; not minimized per its window placement.
 **Windowing and elevation**
 - Single instance (`Local\winland-indicator`), unelevated, no taskbar button and no Alt-Tab entry.
 - Windows carry an **empty title** and `WS_EX_TOOLWINDOW`, which is exactly what `winland`'s
-  managed-window filter and `show-desktop.ps1` reject — so the circles are never minimized, moved, or
+  managed-window filter rejects — so the circles are never minimized, moved, or
   treated as workspace members. `WS_EX_NOACTIVATE` keeps clicks and drags from stealing focus;
   `WS_EX_TOPMOST` keeps them visible.
 
@@ -364,12 +364,14 @@ Z-order predecessors; not minimized per its window placement.
 - Elevation stops there: apps launched from binds get the user's normal token
   (`UnelevatedLauncher`), the pipe ACL admits unelevated `winlandctl` callers, and
   `winland-indicator` runs unelevated (no manifest; `Companions` starts it with the shell's token).
-- `winland-keys` disables native Win-key hotkeys via the `NoWinKeys` policy (notably Win+number
-  taskbar launch). On a policy change it restarts Explorer to apply immediately — asking it to exit
-  cleanly first, killing only as fallback, and relying on Windows' `AutoRestartShell` to bring it
-  back unelevated. If the policy key is locked, it continues without crashing.
-- Selected shell behaviors are reintroduced through config binds (e.g. `Win+D` → `show-desktop`,
-  `Win+E` → `explorer.exe`).
+- Windows' own Win-key shortcuts stay on. The hook swallows only the combos bound in `config.conf`
+  (so the shell never sees those, e.g. Win+number taskbar launch); every other Win combo keeps its
+  Windows meaning, and with Winland closed all of them do. Nothing is changed in the system, so there
+  is nothing to restore on exit or after a crash.
+- Migration: earlier versions set the `NoWinKeys` policy. On startup `winland-keys` removes it if set
+  (`WindowsHotkeyRestorer`) and restarts Explorer once to apply — asking it to exit cleanly first,
+  killing only as fallback, and relying on Windows' `AutoRestartShell` to bring it back unelevated.
+  If the policy key is locked, it logs and continues.
 
 ## 11. Reliability and Error Handling Requirements
 
@@ -398,7 +400,7 @@ Z-order predecessors; not minimized per its window placement.
 
 - PowerShell scripts run with `ExecutionPolicy Bypass`; the trust boundary is local config + local
   script files.
-- Registry modification for `NoWinKeys` may require permissions and can be constrained by org policy.
+- Removing a leftover `NoWinKeys` policy may require permissions and can be constrained by org policy.
 - Both pipes are local-machine only, ACL'd to the logged-on user's processes (elevated or not).
   Accepted trade: any same-user process can drive the window-management verbs — including against
   elevated windows, via the elevated service — and any same-user process can read which workspace

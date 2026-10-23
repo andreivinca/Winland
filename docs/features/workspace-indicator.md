@@ -13,18 +13,27 @@ window handles and needs no elevation. Winland works exactly as before without i
 
 ## 2. What the User Sees
 
-One small translucent white circle per monitor, floating above ordinary windows, carrying that
-monitor's workspace glyph:
+One small translucent white badge per monitor, floating above ordinary windows, listing the workspaces
+that live on that monitor (`WorkspaceStack`):
 
-| Glyph | Meaning |
+| Item | Meaning |
 | --- | --- |
-| `1`, `2`, `17`, … | the workspace shown on that monitor |
-| `S` | the roaming scratchpad is up there |
-| `–` (en dash) | the monitor shows no workspace — or no state has arrived yet |
+| `1`, `4`, `17`, … | a workspace homed on that monitor, not on screen right now (black) |
+| white number | the workspace on screen, in its place among the numbers |
+| `S` (white) | appended while the roaming scratchpad is up there |
+| `–` (en dash) | nothing to list — or no state has arrived yet |
 
-Visually it is the tray icon's language — white disc, bold black Segoe UI glyph that shrinks for
-multi-digit numbers — only faint (~25% opaque) with an antialiased rim, so it sits on top of a
-window without hiding it.
+At startup monitor 1 reads `1` and monitor 2 reads `2`, each in white. A monitor that homes workspaces
+1 and 4 and shows 4 reads `1 4` with the 4 in white; with the scratchpad brought up there it reads
+`1 4 S` with the `S` in white, and the `S` goes away when the scratchpad does. A workspace on screen
+there but homed on a monitor that is asleep is listed too, in white.
+
+The badge is a rectangle that hugs its docked edge (`BadgeLayout`): the side against the edge is square
+and tucks past it, the far side has rounded corners. The items run **along** the edge — left to right
+on the top or bottom edge, stacked top to bottom (first item up) on the left or right edge — so the
+badge grows with the number of workspaces. Ahead of the first item sits a **grip** — a small block of
+dots at the left end (top or bottom edge) or the top end (left or right edge). Visually it is the tray icon's language — bold black Segoe
+UI on white — only faint (~25% opaque), so it sits on top of a window without hiding it.
 
 ## 3. The Docking Interaction (the core rule)
 
@@ -32,7 +41,8 @@ The circle is **always docked to one margin** of its monitor's work area: it hug
 tucks slightly past it (~6 px at 96 DPI, so it sits a little hidden by the margin) — at the ends of
 the edge too.
 
-Dragging it with the left mouse button obeys one rule:
+It is dragged **by its grip only**: press the left mouse button on the grip and drag. A press anywhere
+else on the badge does nothing. The drag obeys one rule:
 
 > **A drag slides the circle along its docked edge. Perpendicular motion does nothing.**
 > If it is docked to the top margin and you drag *down*, it does not move down. Only when the mouse
@@ -44,8 +54,9 @@ Concretely, on each mouse-move during a drag:
 1. Find the edge of the work area **nearest the cursor** and how far the cursor is from it.
 2. If that distance is within the **dock threshold** (~80 px at 96 DPI), that edge becomes the docked
    edge. Otherwise the docked edge stays exactly what it was.
-3. Place the circle on the docked edge, centred on the cursor's coordinate **parallel** to that edge
-   (the cursor's X for a top/bottom dock, its Y for a left/right dock), clamped so the circle stays
+3. Place the circle on the docked edge so the point of the grip that was pressed stays under the
+   cursor's coordinate **parallel** to that edge (the cursor's X for a top/bottom dock, its Y for a
+   left/right dock) — the badge never jumps at the press — clamped so the circle stays
    fully inside the work area.
 
 Because the docked position is always derived from the monitor's own work area and clamped to it,
@@ -75,10 +86,12 @@ stays on its own monitor.
 The drag goes on: keep sliding along the new monitor's edges, or carry the workspace back. Re-entering
 the first monitor moves the workspace back the same way, live.
 
-**Never on two circles.** While a drag carrying workspace *n* is in effect, the carrier shows *n*, and
-any other circle that the latest snapshot still credits with *n* is hidden (fully transparent, so also
-click-through). Circles that hide are redrawn before those that appear, so *n* never shows twice, not
-even for a frame.
+**Never on two circles.** While a drag carrying workspace *n* is in effect, the carrier lists *n*
+in white (and what it showed before as a plain number, since that stays homed there), every other
+badge drops
+*n*, and any badge that the latest snapshot still credits with *showing* *n* is hidden (fully
+transparent, so also click-through). Circles that hide are redrawn before those that appear, so *n* never
+shows twice, not even for a frame.
 
 **Release** only ends the drag: the carrier stays docked where it was let go, and every circle's dock
 is saved (§5). The rule above stays in effect until a snapshot shows *n* on the carrier's monitor, or
@@ -138,10 +151,12 @@ log), `winland-indicator-dock.txt`:
 `winland` publishes on a second named pipe, `\\.\pipe\winland-events`
 (`Ipc.EventsPipeName`), which is **outbound only** — nothing a subscriber could write is ever read.
 
-- **Message**: one line per snapshot, space-separated `<device>=<workspace>` pairs ordered
-  left-to-right, e.g. `\\.\DISPLAY1=3 \\.\DISPLAY2=5`. Device names contain no spaces, so the format
-  needs no escaping. The workspace is the **raw** number: `0` = nothing shown, `int.MaxValue` = the
-  scratchpad. Mapping those to `–` and `S` is the client's business.
+- **Message**: one line per snapshot, space-separated `<device>=<shown>:<homed>` entries ordered
+  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. Device names contain no spaces, so the format
+  needs no escaping. `shown` is the **raw** number on screen: `0` = nothing shown, `int.MaxValue` = the
+  scratchpad. `homed` is the comma-separated, ascending list of workspaces whose home is that monitor
+  (possibly empty). `MonitorWorkspaces` (in `Winland.Common`) is the one place it is written and read;
+  turning it into the badge's items is the client's business.
 - **On connect**: the current snapshot is sent immediately, so a subscriber that starts after
   Winland is instantly correct.
 - **On change**: `WorkspaceManager.NotifyWorkspaceChanges` hands `WorkspaceSnapshot` to
@@ -174,8 +189,8 @@ log), `winland-indicator-dock.txt`:
 ## 8. Why It Is Invisible to Window Management
 
 Each circle is a `Form` with an **empty title** and the `WS_EX_TOOLWINDOW` extended style — precisely
-the two things `WorkspaceManager.IsManaged` and `show-desktop.ps1` reject. So the circles are never
-minimized by a workspace switch or by `Win+D`, never counted as workspace members, never listed in the
+the thing `WorkspaceManager.IsManaged` rejects. So the circles are never
+minimized by a workspace switch, never counted as workspace members, never listed in the
 taskbar or Alt-Tab. `WS_EX_TOPMOST` keeps them above ordinary windows, and `WS_EX_LAYERED` +
 `UpdateLayeredWindow` give them per-pixel alpha — which also means the mouse only hits the circle
 itself, not the transparent square around it.
@@ -195,8 +210,10 @@ UI-thread heartbeat covers the stretches where nothing is redrawn.
   they received (they do not blank out and do not claim to be current).
 - **A sleeping monitor is absent** from the snapshot; its circle shows `–` until the monitor comes
   back and a workspace change republishes.
-- **The workspace count is not tracked** — the indicator shows what each monitor displays, nothing
-  about workspaces on other monitors or how many exist.
+- **The badge lists homed workspaces, not just occupied ones.** A workspace stays homed on a monitor from
+  its first `Win+N` until it is released or moved, so it is listed even with no windows in it.
+- **A drag carries the workspace on screen** (the white one) and starts only from the grip; the other
+  numbers can't be dragged out individually.
 - **No keyboard interaction**; the circle is drag-only by design (it must never take focus). There is
   no cancel: a move happens as the cursor enters a monitor, so carry the workspace back to undo it.
 - **Every crossing is a full move.** Each one puts windows away and lays them out again; brushing

@@ -11,10 +11,10 @@ namespace Winland;
 ///
 ///  * Tiles stand side by side in a scrolling strip on the monitor showing the workspace (geometry in
 ///    <see cref="StripLayout"/>, order in <see cref="TileOrder"/>). A window becomes a tile when the user
-///    tiles it (Win+Space), moves it to a workspace (Win+Shift+N), or opens it from a Winland shortcut.
+///    tiles it (Win+T), moves it to a workspace (Win+Shift+N), or opens it from a Winland shortcut.
 ///  * A tile the user drags or resizes with the mouse leaves the strip and floats: Windows manages it,
 ///    exactly where the user put it — even on another monitor — but it stays in its workspace, so it is put
-///    away and brought back with it. Win+Space tiles it again, back at its place in the strip.
+///    away and brought back with it. Win+T tiles it again, back at its place in the strip.
 ///
 /// Windows that belong to no workspace are normal Windows windows: never tiled or resized, and only put
 /// away (minimized) when their monitor switches workspace, like everything else on that monitor.
@@ -66,7 +66,7 @@ internal sealed partial class WorkspaceManager
     private bool IsTile(IntPtr hWnd) => _windowWorkspace.ContainsKey(hWnd) && !_floating.Contains(hWnd);
 
     /// <summary>
-    /// Tile the focused window (Win+Space): link it to the workspace shown on its monitor and put it into that
+    /// Tile the focused window (Win+T on a window in no workspace, or the <c>link-here</c> command): link it to the workspace shown on its monitor and put it into that
     /// workspace's strip — a new window right after the tile that had focus, a floating member back at its
     /// old place; the other tiles make room. On a tile there, it snaps the tile back into its column. A
     /// no-op when the window's monitor shows no workspace.
@@ -122,15 +122,14 @@ internal sealed partial class WorkspaceManager
     }
 
     /// <summary>
-    /// Pop the focused window out of tiling, or put it back (Win+T):
-    ///  * A tile floats where it is — still in its workspace — and the strip closes the gap, as if the user
-    ///    had dragged it out.
-    ///  * A floating window goes back into its OWN workspace's strip, at its old place, wherever it was
-    ///    floating (unlike Win+Space, which takes the workspace shown on the window's monitor). If that
-    ///    workspace isn't on screen, it is shown on its home monitor with the window in view.
-    ///  * A window in no workspace is tiled into the workspace shown on its monitor, like Win+Space.
+    /// Tile the focused window, or take it out of tiling (Win+T):
+    ///  * A window in no workspace is tiled into the workspace shown on its monitor (<c>link-here</c>).
+    ///  * A floating member (dragged out of its strip) goes back into its OWN workspace's strip, at its old
+    ///    place, wherever it was floating. If that workspace isn't on screen, it is shown on its home
+    ///    monitor with the window in view.
+    ///  * A tile is unlinked: it leaves its workspace and is a normal window again (<c>unlink</c>).
     /// </summary>
-    public void ToggleFloating()
+    public void ToggleTiling()
     {
         IntPtr hWnd = GetForegroundWindow();
         if (!IsManaged(hWnd))
@@ -144,20 +143,15 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
-        RefreshMonitors();
-
-        GuardEvents();
         if (!_floating.Contains(hWnd))
         {
-            _floating.Add(hWnd);
-            ReflowShown(workspace);
-            Foreground.Activate(hWnd); // above the tiles that just moved in under it
-            GuardEvents();
-
-            LogTiles($"float {WsLabel(workspace)}", workspace, hWnd);
+            UnlinkFocusedWindow();
             return;
         }
 
+        RefreshMonitors();
+
+        GuardEvents();
         Relink(hWnd, workspace, OrderJoining(workspace, hWnd)); // its own workspace: back at its old place
         MonitorState? monitor = MonitorShowing(workspace);
         if (monitor != null)
@@ -731,7 +725,7 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// Opened from a Winland shortcut: the window joins the workspace shown on the monitor it was placed on,
-    /// as a tile right after the focused one. (Windows opened any other way stay unlinked until Win+Space.)
+    /// as a tile right after the focused one. (Windows opened any other way stay unlinked until Win+T.)
     /// </summary>
     private void TileLaunchedWindow(IntPtr hWnd, string device)
     {

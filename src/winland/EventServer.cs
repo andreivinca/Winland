@@ -10,7 +10,7 @@ namespace Winland;
 
 /// <summary>
 /// The event-channel server: a broadcast-only named pipe (<see cref="Ipc.EventsPipeName"/>) that
-/// publishes what every monitor is showing. Subscribers — the on-screen indicator today — connect and
+/// publishes what every monitor is showing and which workspaces live on it. Subscribers — the on-screen indicator today — connect and
 /// only read; nothing they could send would be listened to.
 ///
 /// The workspace engine runs on the UI thread, so <see cref="Publish"/> must never block: it only
@@ -52,12 +52,13 @@ internal sealed class EventServer : IDisposable
     }
 
     /// <summary>
-    /// Publish what each monitor is showing. Called on the UI thread after every workspace change —
-    /// it does no I/O and takes only an uncontended lock, so it returns immediately.
+    /// Publish what each monitor is showing and which workspaces are homed on it. Called on the UI
+    /// thread after every workspace change — it does no I/O and takes only an uncontended lock, so it
+    /// returns immediately. The line itself is written by <see cref="MonitorWorkspaces.Format"/>.
     /// </summary>
-    public void Publish(IReadOnlyList<(string Device, int Workspace)> snapshot)
+    public void Publish(IReadOnlyList<MonitorWorkspaces> snapshot)
     {
-        string line = FormatSnapshot(snapshot);
+        string line = MonitorWorkspaces.Format(snapshot);
         lock (_gate)
         {
             _snapshot = line;
@@ -65,14 +66,6 @@ internal sealed class EventServer : IDisposable
             Monitor.PulseAll(_gate);
         }
     }
-
-    /// <summary>
-    /// The one place the wire format is written (its grammar is documented on
-    /// <see cref="Ipc.EventsPipeName"/>): "&lt;device&gt;=&lt;workspace&gt;" pairs separated by
-    /// spaces, which is unambiguous because GDI display names never contain one.
-    /// </summary>
-    private static string FormatSnapshot(IReadOnlyList<(string Device, int Workspace)> snapshot) =>
-        string.Join(' ', snapshot.Select(m => $"{m.Device}={m.Workspace}"));
 
     private void AcceptLoop()
     {

@@ -18,13 +18,13 @@ workspace logic. (See `architecture-overview.md`.)
 strip by the user but still in the workspace; see `tiling.md`).
 
 - **Move** (`Win+Shift+N` → `movetoworkspace N`) — unlink from the old workspace, link to N as a tile.
-- **Tile** (`Win+Space` → `link-here`) — link to the workspace currently shown on the window's
+- **Tile** (`Win+T` → `toggle-tile`, on a window in no workspace; also `link-here`) — link to the workspace currently shown on the window's
   monitor, as a tile (a no-op when that monitor shows no workspace).
 - **Open from a Winland shortcut** (`place-next-window`) — link to the workspace shown on the monitor
   under the mouse, as a tile (resizable windows only).
 - **Unlink** (`Win+Shift+Space` → `unlink`) — remove from its workspace; a normal window again.
-- **Toggle floating** (`Win+T` → `toggle-float`) on a window in no workspace — same as Tile. (On a member
-  it only switches between tile and floating; membership doesn't change.)
+  `Win+T` (`toggle-tile`) on a tile does the same. (On a floating member it re-tiles it in its own
+  workspace; membership doesn't change.)
 - **A tile moved past the end of its strip** (`move-window`) — relink to the workspace shown on the
   monitor it crosses to.
 - **Close** — closed windows are pruned *lazily* in `WindowsOf` (when membership is next read).
@@ -160,7 +160,7 @@ A roaming workspace reserved at `int.MaxValue` with **no home monitor**:
 - Toggling while it is up on *another* monitor first sends that monitor back to its previous
   workspace, then brings the scratchpad (and its windows) to the mouse monitor.
 - Windows attach to it like any workspace: focus one while the scratchpad is shown and press
-  `Win+Space`. Its tiles are laid out on whichever monitor it appears on.
+  `Win+T`. Its tiles are laid out on whichever monitor it appears on.
 
 ## 9. Focus Restoration and Event Guarding
 
