@@ -65,7 +65,8 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 - `Win+Shift+N` moves the focused window to workspace N as a tile (`winlandctl movetoworkspace N`);
   `Win+T` tiles it into the current workspace, or unlinks it if it is a tile (`winlandctl toggle-tile`);
   `Win+Shift+Space` makes it
-  a normal window again (`winlandctl unlink`). See `docs/features/tiling.md`.
+  a normal window again (`winlandctl unlink`). `Win+Alt+F` makes a tile cover its whole monitor and
+  back, keeping its place in the row (`winlandctl toggle-fullscreen`). See `docs/features/tiling.md`.
 - `Win+Left/Right` step through and scroll a tile row; `Win+Shift+Left/Right` move a tile along it
   (`winlandctl move-window left|right`).
 - `Win+S` toggles the roaming scratchpad on the mouse monitor (`winlandctl scratchpad`).

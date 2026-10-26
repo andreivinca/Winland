@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Winland;
 
@@ -77,6 +78,24 @@ internal static class StripLayout
         }
 
         return new StripArrangement(scrolled, visible, slots);
+    }
+
+    /// <summary>
+    /// <paramref name="strip"/> with tile <paramref name="fullscreen"/> covering <paramref name="screen"/> (the
+    /// whole monitor) instead of its column. Nothing else moves: the strip keeps its scroll position and the
+    /// tile keeps its column, reserved behind it, so leaving fullscreen puts it straight back. A tile out of
+    /// view stays hidden in its parking column; -1 (or any index outside the strip) means no fullscreen tile.
+    /// </summary>
+    public static StripArrangement WithFullscreen(StripArrangement strip, int fullscreen, TileRect screen)
+    {
+        if (fullscreen < 0 || fullscreen >= strip.Slots.Count || !strip.Slots[fullscreen].Visible)
+        {
+            return strip;
+        }
+
+        TileSlot[] slots = strip.Slots.ToArray();
+        slots[fullscreen] = new TileSlot(screen, Visible: true);
+        return strip with { Slots = slots };
     }
 
     /// <summary>How many columns of at least <paramref name="minTileWidth"/> fit; never fewer than one.</summary>

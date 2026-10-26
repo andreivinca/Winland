@@ -5,7 +5,7 @@ namespace Winland;
 
 /// <summary>
 /// Maps a control command ("workspace 1", "movetoworkspace 1", "move-workspace 3 \\.\DISPLAY2", "link-here",
-/// "unlink", "toggle-tile", "scratchpad",
+/// "unlink", "toggle-tile", "toggle-fullscreen", "scratchpad",
 /// "workspace-release", "focus left", "move-window right", "focus-app firefox",
 /// "focus-web https://gemini.google.com", "close", "place-next-window") to the matching
 /// in-process operation. The single source of truth for what Winland can do; reached from the
@@ -68,6 +68,10 @@ internal sealed class Dispatcher
 
             case "toggle-tile":
                 FollowedByCursor(_workspaces.ToggleTiling);
+                return Ipc.Ok;
+
+            case "toggle-fullscreen":
+                FollowedByCursor(_workspaces.ToggleFullscreen);
                 return Ipc.Ok;
 
             case "scratchpad":

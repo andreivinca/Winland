@@ -166,6 +166,8 @@ It has **no keyboard hook**: every action originates from the pipe.
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
   - `toggle-tile` → `WorkspaceManager.ToggleTiling` (tile a normal window, put a floating one back into
     its own workspace's strip, or unlink a tile)
+  - `toggle-fullscreen` → `WorkspaceManager.ToggleFullscreen` (the focused tile covers its whole
+    monitor while keeping its column; again: back into the column — see `features/tiling.md` §3.1)
   - `scratchpad` → `WorkspaceManager.ToggleScratchpad`
   - `workspace-release` → `WorkspaceManager.ReleaseCurrentWorkspace`
   - `focus <left|right|up|down>` → `WorkspaceManager.FocusAdjacentTile` (left/right within a tile

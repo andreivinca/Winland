@@ -55,7 +55,10 @@ internal sealed partial class WorkspaceManager
     {
         public bool Shows(IntPtr hWnd) => ColumnOf(hWnd) != null;
 
-        /// <summary>The column a tile was shown in, or null when it isn't in view (or isn't a tile here).</summary>
+        /// <summary>
+        /// Where a tile was shown — its column, or the whole monitor for the fullscreen tile — or null when
+        /// it isn't in view (or isn't a tile here).
+        /// </summary>
         public TileRect? ColumnOf(IntPtr hWnd)
         {
             int index = Array.IndexOf(Tiles, hWnd);
@@ -315,6 +318,7 @@ internal sealed partial class WorkspaceManager
 
     private void ForgetTile(IntPtr hWnd, int workspace)
     {
+        EndFullscreen(hWnd, workspace);
         _tileOrder[workspace] = TileOrder.Remove(OrderOf(workspace), hWnd);
         if (_lastActive.TryGetValue(workspace, out IntPtr last) && last == hWnd)
         {
@@ -465,18 +469,18 @@ internal sealed partial class WorkspaceManager
     /// <summary>
     /// Arrange a workspace's strip on <paramref name="monitor"/>, scrolled the least needed to show
     /// <paramref name="reveal"/> (Zero: keep the current scroll position). Visible tiles are restored into
-    /// their columns; the rest are minimized.
+    /// their columns — its fullscreen tile onto the whole monitor instead; the rest are minimized.
     /// </summary>
     private void LayoutWorkspace(int workspace, MonitorState monitor, IntPtr reveal)
     {
         List<IntPtr> tiles = TilesOf(workspace);
-        RECT work = monitor.Work;
         StripArrangement strip = StripLayout.Arrange(
-            new TileRect(work.Left, work.Top, work.Right, work.Bottom),
+            ToTileRect(monitor.Work),
             DpiOf(monitor.Handle),
             tiles.Count,
             _scrollFirst.GetValueOrDefault(workspace),
             tiles.IndexOf(reveal));
+        strip = StripLayout.WithFullscreen(strip, tiles.IndexOf(FullscreenTileOf(workspace)), ToTileRect(monitor.Bounds));
 
         _scrollFirst[workspace] = strip.First;
         _arranged[workspace] = new Arrangement(tiles.ToArray(), strip);
@@ -498,6 +502,8 @@ internal sealed partial class WorkspaceManager
             }
         }
     }
+
+    private static TileRect ToTileRect(RECT r) => new(r.Left, r.Top, r.Right, r.Bottom);
 
     private static void ShowTile(IntPtr hWnd, TileRect column)
     {
@@ -745,7 +751,8 @@ internal sealed partial class WorkspaceManager
     /// <summary>
     /// The user dragged or resized a tile with the mouse: it leaves the strip and floats where they put it —
     /// still a member of its workspace, even when dropped on another monitor — and the strip closes the
-    /// gap. A tile still in its column wasn't really moved (a click on the title bar) and stays a tile, and so
+    /// gap (a fullscreen tile stops being fullscreen). A tile still where its layout put it wasn't really
+    /// moved (a click on the title bar) and stays a tile, and so
     /// does a maximized or minimized one: those are states of the tile (a double-click on the title bar
     /// maximizes through the same move loop), and its next layout puts it back in its column.
     /// </summary>
@@ -764,6 +771,7 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
+        EndFullscreen(hWnd, workspace);
         _floating.Add(hWnd);
         ReflowShown(workspace);
 

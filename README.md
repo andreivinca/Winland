@@ -101,6 +101,7 @@ ends up in view and focused — if the target lives on a different monitor, the 
 | `Win`+`T` | **Pop out / put back.** On a tile: it floats where it is, still in its workspace, and the row closes the gap. On a floating window: it goes back into its **own** workspace's row at its old place — even from another monitor (if that workspace isn't shown, it is shown). On a window in no workspace: same as `Win`+`Space`. |
 | `Win`+`←` `→` | On a tile: focus the tile beside it, scrolling the row if it's out of view. Past either end of the row (or on any other window), focus the nearest window in that direction. |
 | `Win`+`Shift`+`←` `→` | On a tile: swap it with its neighbour; from the end of the row it moves onto the next monitor's workspace. On any other window: move it to the next monitor (a floating window stays in its workspace). |
+| `Win`+`Alt`+`F` | **Fullscreen / back.** On a tile: it covers its whole monitor, taskbar included, and keeps its place in the row — press again and it is back in its column. It stays in its workspace (and stays fullscreen when the workspace is put away and shown again). Dragging it out or unlinking it ends fullscreen. One fullscreen tile per workspace. |
 
 **The mouse follows the keyboard.** When a shortcut focuses another window (`Win`+arrows, launch-or-focus
 shortcuts) or moves the focused one (`Win`+`Shift`+arrows, `Win`+`Space`, `Win`+`Shift`+`N`), the
@@ -205,6 +206,7 @@ them yourself from a terminal):
 | `winlandctl link-here` | Tile the focused window into the workspace shown on its monitor. |
 | `winlandctl unlink` | Unlink the focused window from its workspace — a normal window again. |
 | `winlandctl toggle-tile` | Tile the focused window: a normal window into the workspace on its monitor, a floating one back into its own workspace's row. On a tile: unlink it. |
+| `winlandctl toggle-fullscreen` | On a tile: cover its whole monitor, keeping its place in the row; again: back into its column. |
 | `winlandctl scratchpad` | Toggle the roaming scratchpad on the monitor under the mouse. |
 | `winlandctl workspace-release` | Release the current workspace from its monitor. |
 | `winlandctl focus left\|right\|up\|down` | Focus the next tile (`left`/`right`, scrolling) or the nearest window in that direction. |
@@ -249,6 +251,7 @@ bind = SUPER SHIFT 2, winlandctl movetoworkspace 2
 # Tile / unlink the focused window, and move a tile along its row
 bind = SUPER T, winlandctl toggle-tile
 bind = SUPER SHIFT SPACE, winlandctl unlink
+bind = SUPER ALT F, winlandctl toggle-fullscreen
 bind = SUPER SHIFT LEFT, winlandctl move-window left
 bind = SUPER SHIFT RIGHT, winlandctl move-window right
 
