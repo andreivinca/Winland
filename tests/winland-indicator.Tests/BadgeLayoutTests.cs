@@ -97,4 +97,45 @@ public sealed class BadgeLayoutTests
         Assert.AreEqual(at96.Size.Height * 2, at192.Size.Height);
         Assert.AreEqual(at96.Size.Width * 2, at192.Size.Width, 1);
     }
+
+    [TestMethod]
+    [DataRow((int)DockEdge.Top, 96)]
+    [DataRow((int)DockEdge.Bottom, 96)]
+    [DataRow((int)DockEdge.Left, 144)]
+    [DataRow((int)DockEdge.Right, 192)]
+    public void EachUnderline_SitsCentredBelowItsItem_InTheVisiblePartOfTheBadge(int edge, int dpi)
+    {
+        BadgeLayout layout = BadgeLayout.For(Three, (DockEdge)edge, dpi);
+        float tuck = BadgeLayout.BaseTuck * layout.Scale;
+        var visible = (DockEdge)edge switch
+        {
+            DockEdge.Top => new RectangleF(0, tuck, layout.Size.Width, layout.Size.Height - tuck),
+            DockEdge.Bottom => new RectangleF(0, 0, layout.Size.Width, layout.Size.Height - tuck),
+            DockEdge.Left => new RectangleF(tuck, 0, layout.Size.Width - tuck, layout.Size.Height),
+            _ => new RectangleF(0, 0, layout.Size.Width - tuck, layout.Size.Height)
+        };
+
+        for (int i = 0; i < layout.Cells.Count; i++)
+        {
+            RectangleF cell = layout.Cells[i];
+            RectangleF line = layout.Underlines[i];
+
+            Assert.IsGreaterThan(cell.Top + cell.Height / 2, line.Top);                                  // below the glyphs' centre
+            Assert.AreEqual(cell.Left + cell.Width / 2, line.Left + line.Width / 2, 0.01);              // centred under them
+            Assert.IsTrue(visible.Contains(line), $"underline {i} {line} leaves the visible {visible}"); // never tucked away
+            if (i + 1 < layout.Cells.Count && BadgeLayout.IsVertical((DockEdge)edge))
+            {
+                Assert.IsLessThanOrEqualTo(layout.Cells[i + 1].Top, line.Bottom);                         // clear of the next row
+            }
+        }
+    }
+
+    [TestMethod]
+    public void AnUnderline_IsAsWideAsItsItemsGlyphs()
+    {
+        BadgeLayout layout = BadgeLayout.For(Three, DockEdge.Top, 96);
+
+        Assert.AreEqual(layout.Cells[0].Width, layout.Underlines[0].Width, 0.01);
+        Assert.AreEqual(layout.Cells[2].Width, layout.Underlines[2].Width, 0.01); // two digits, a longer line
+    }
 }

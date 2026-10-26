@@ -24,18 +24,23 @@ internal sealed class BadgeLayout
     public const float BaseGripDot = 2f;   // grip dot diameter
     public const float BaseGripPitch = 4f; // grip dots, centre to centre
 
+    public const float BaseUnderlineDrop = 6.5f;    // from a cell's centre down to its underline's top
+    public const float BaseUnderlineThickness = 2f;
+
     private const int BaseEndPadding = 6;  // before the grip and after the last item
     private const int BaseGap = 8;         // between the grip and the first item, and between items
     private const int BaseRowHeight = 11;  // one item's glyphs, stacked on a left/right edge
     private const int BaseGlyphWidth = 7;  // one character, on a top/bottom edge
     private const float BaseGripLength = BaseGripPitch + BaseGripDot; // two dots along the edge
 
-    private BadgeLayout(Size size, RectangleF grip, RectangleF gripArea, IReadOnlyList<RectangleF> cells, float scale)
+    private BadgeLayout(Size size, RectangleF grip, RectangleF gripArea, IReadOnlyList<RectangleF> cells,
+        IReadOnlyList<RectangleF> underlines, float scale)
     {
         Size = size;
         Grip = grip;
         GripArea = gripArea;
         Cells = cells;
+        Underlines = underlines;
         Scale = scale;
     }
 
@@ -53,6 +58,12 @@ internal sealed class BadgeLayout
 
     /// <summary>Where each item's glyph is centred, in badge coordinates, in item order.</summary>
     public IReadOnlyList<RectangleF> Cells { get; }
+
+    /// <summary>
+    /// Where each item's underline goes, in item order: just below its glyphs and as wide as they are,
+    /// whichever way the items run. Only the item on screen is underlined.
+    /// </summary>
+    public IReadOnlyList<RectangleF> Underlines { get; }
 
     /// <summary>The monitor's DPI over 96.</summary>
     public float Scale { get; }
@@ -85,11 +96,15 @@ internal sealed class BadgeLayout
 
         // Every cell is exactly its glyphs' extent, so the one gap is the whole visible spacing.
         var cells = new List<RectangleF>(items.Count);
+        var underlines = new List<RectangleF>(items.Count);
         foreach (string item in items)
         {
             cursor += BaseGap * scale;
-            float length = (vertical ? BaseRowHeight : BaseGlyphWidth * Math.Max(1, item.Length)) * scale;
-            cells.Add(Cell(cursor, length));
+            float glyphs = BaseGlyphWidth * Math.Max(1, item.Length) * scale;
+            float length = vertical ? BaseRowHeight * scale : glyphs;
+            RectangleF cell = Cell(cursor, length);
+            cells.Add(cell);
+            underlines.Add(UnderlineOf(cell, glyphs, scale));
             cursor += length;
         }
 
@@ -100,6 +115,16 @@ internal sealed class BadgeLayout
             ? new RectangleF(0, 0, across, gripEnd)
             : new RectangleF(0, 0, gripEnd, across);
 
-        return new BadgeLayout(vertical ? new Size(across, along) : new Size(along, across), grip, gripArea, cells, scale);
+        return new BadgeLayout(vertical ? new Size(across, along) : new Size(along, across), grip, gripArea, cells,
+            underlines, scale);
+    }
+
+    /// <summary>A line <paramref name="width"/> wide, centred under the glyphs centred in <paramref name="cell"/>.</summary>
+    private static RectangleF UnderlineOf(RectangleF cell, float width, float scale)
+    {
+        float centreX = cell.Left + cell.Width / 2;
+        float centreY = cell.Top + cell.Height / 2;
+        return new RectangleF(centreX - width / 2, centreY + BaseUnderlineDrop * scale, width,
+            BaseUnderlineThickness * scale);
     }
 }

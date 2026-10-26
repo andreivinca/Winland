@@ -11,7 +11,8 @@ using System.Windows.Forms;
 namespace Winland.Indicator;
 
 /// <summary>
-/// One monitor's on-screen workspace badge: a translucent white rectangle docked to an edge of that
+/// One monitor's on-screen workspace badge: a translucent rectangle (white, or black in dark mode — see
+/// <see cref="BadgeTheme"/>) docked to an edge of that
 /// monitor, listing its workspaces (see <see cref="WorkspaceStack"/>), drawn as a layered window so its
 /// antialiased corners blend with whatever is behind it. The side against the edge is square and tucks
 /// past it; the far side has rounded corners. Items run along the edge (<see cref="BadgeLayout"/>).
@@ -41,12 +42,9 @@ internal sealed class IndicatorWindow : Form
     // own measures are in BadgeLayout.
     private const int BaseDockThreshold = 80;   // how near an edge the cursor must come to dock there
 
-    private const int BadgeAlpha = 64;          // ~25% opaque white — a hint, not a widget
-    private const int GlyphAlpha = 170;         // the items stay stronger than their backing, still soft
-    private const int ActiveGlyphAlpha = 230;   // the on-screen workspace: its number in white, not black
-
     private MonitorInfo _monitor;
     private DockState _dock;
+    private BadgeTheme _theme;
     private IReadOnlyList<StackItem> _items = [new(WorkspaceStack.Nothing, false)]; // until told otherwise
     private bool _visible = true;               // false: draw nothing (the workspace is on another badge)
     private bool _dragging;
@@ -64,10 +62,11 @@ internal sealed class IndicatorWindow : Form
     /// <summary>The drag is over: the button was released, or the mouse was taken away from the circle.</summary>
     public event Action? DragEnded;
 
-    public IndicatorWindow(MonitorInfo monitor, DockState dock)
+    public IndicatorWindow(MonitorInfo monitor, DockState dock, BadgeTheme theme)
     {
         _monitor = monitor;
         _dock = dock;
+        _theme = theme;
 
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.Manual; // UpdateLayeredWindow does all the placing
@@ -138,6 +137,18 @@ internal sealed class IndicatorWindow : Form
     public void ApplyMonitor(MonitorInfo monitor)
     {
         _monitor = monitor;
+        Redraw();
+    }
+
+    /// <summary>Adopt the Windows app mode's colours (see <see cref="BadgeTheme"/>).</summary>
+    public void ApplyTheme(BadgeTheme theme)
+    {
+        if (theme == _theme)
+        {
+            return;
+        }
+
+        _theme = theme;
         Redraw();
     }
 
@@ -307,8 +318,9 @@ internal sealed class IndicatorWindow : Form
     }
 
     /// <summary>
-    /// Draw the badge: a translucent white rectangle, rounded on the side away from its edge, with each
-    /// item in soft black bold Segoe UI in its own cell — the tray icon's visual language, only see-through.
+    /// Draw the badge: a translucent rectangle, rounded on the side away from its edge, with each item in
+    /// soft bold Segoe UI in its own cell — the tray icon's visual language, only see-through, in the
+    /// colours of the Windows app mode (<see cref="BadgeTheme"/>).
     /// </summary>
     private void DrawBadge(Graphics g, BadgeLayout layout)
     {
@@ -321,12 +333,12 @@ internal sealed class IndicatorWindow : Form
         }
 
         using (GraphicsPath shape = Shape(layout.Size, _dock.Edge, BadgeLayout.BaseCornerRadius * layout.Scale))
-        using (var backing = new SolidBrush(Color.FromArgb(BadgeAlpha, Color.White)))
+        using (var backing = new SolidBrush(_theme.Backing))
         {
             g.FillPath(backing, shape);
         }
 
-        using var ink = new SolidBrush(Color.FromArgb(GlyphAlpha, Color.Black));
+        using var ink = new SolidBrush(_theme.Ink);
         DrawGrip(g, ink, layout.Grip, BadgeLayout.IsVertical(_dock.Edge), layout.Scale);
 
         using var font = new Font("Segoe UI", BadgeLayout.BaseFontSize * layout.Scale, FontStyle.Bold, GraphicsUnit.Pixel);
@@ -336,17 +348,20 @@ internal sealed class IndicatorWindow : Form
             LineAlignment = StringAlignment.Center
         };
 
-        // Segoe UI's digits sit high: nudge each cell down a hair, as the tray icon does. The workspace on
-        // screen is the one number drawn in white instead of black — nothing else marks it. Each item is
-        // drawn centred on a POINT, not in its cell's rectangle: a cell is the glyphs' bare extent, and GDI+
+        // Segoe UI's digits sit high: nudge each cell down a hair, as the tray icon does. Every item is drawn
+        // in the same ink; the workspace on screen is the one underlined — nothing else marks it. Each item
+        // is drawn centred on a POINT, not in its cell's rectangle: a cell is the glyphs' bare extent, and GDI+
         // would trim or wrap text that, with its side bearings, overflows a layout rectangle.
         float nudge = layout.Scale / 2;
-        using var activeInk = new SolidBrush(Color.FromArgb(ActiveGlyphAlpha, Color.White));
         for (int i = 0; i < _items.Count; i++)
         {
             RectangleF cell = layout.Cells[i];
             var centre = new PointF(cell.Left + cell.Width / 2, cell.Top + cell.Height / 2 + nudge);
-            g.DrawString(_items[i].Text, font, _items[i].Active ? activeInk : ink, centre, format);
+            g.DrawString(_items[i].Text, font, ink, centre, format);
+            if (_items[i].Active)
+            {
+                g.FillRectangle(ink, layout.Underlines[i]);
+            }
         }
     }
 

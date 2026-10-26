@@ -13,27 +13,44 @@ window handles and needs no elevation. Winland works exactly as before without i
 
 ## 2. What the User Sees
 
-One small translucent white badge per monitor, floating above ordinary windows, listing the workspaces
-that live on that monitor (`WorkspaceStack`):
+One small translucent badge per monitor, floating above ordinary windows, listing the workspaces
+that live on that monitor (`WorkspaceStack`). Every item is drawn in the same ink (§2a); the one on
+screen is **underlined**:
 
 | Item | Meaning |
 | --- | --- |
-| `1`, `4`, `17`, … | a workspace homed on that monitor, not on screen right now (black) |
-| white number | the workspace on screen, in its place among the numbers |
-| `S` (white) | appended while the roaming scratchpad is up there |
+| `1`, `4`, `17`, … | a workspace homed on that monitor, not on screen right now |
+| underlined number | the workspace on screen, in its place among the numbers |
+| `S` (underlined) | appended while the roaming scratchpad is up there |
 | `–` (en dash) | nothing to list — or no state has arrived yet |
 
-At startup monitor 1 reads `1` and monitor 2 reads `2`, each in white. A monitor that homes workspaces
-1 and 4 and shows 4 reads `1 4` with the 4 in white; with the scratchpad brought up there it reads
-`1 4 S` with the `S` in white, and the `S` goes away when the scratchpad does. A workspace on screen
-there but homed on a monitor that is asleep is listed too, in white.
+At startup monitor 1 reads `1` and monitor 2 reads `2`, each underlined. A monitor that homes workspaces
+1 and 4 and shows 4 reads `1 4` with the 4 underlined; with the scratchpad brought up there it reads
+`1 4 S` with the `S` underlined, and the `S` goes away when the scratchpad does. A workspace on screen
+there but homed on a monitor that is asleep is listed too, underlined. The underline is as wide as the
+item's glyphs and sits just below them (`BadgeLayout.Underlines`), on every edge.
 
 The badge is a rectangle that hugs its docked edge (`BadgeLayout`): the side against the edge is square
 and tucks past it, the far side has rounded corners. The items run **along** the edge — left to right
 on the top or bottom edge, stacked top to bottom (first item up) on the left or right edge — so the
 badge grows with the number of workspaces. Ahead of the first item sits a **grip** — a small block of
-dots at the left end (top or bottom edge) or the top end (left or right edge). Visually it is the tray icon's language — bold black Segoe
-UI on white — only faint (~25% opaque), so it sits on top of a window without hiding it.
+dots at the left end (top or bottom edge) or the top end (left or right edge). Visually it is the tray icon's language — bold Segoe
+UI — only faint (~25% opaque), so it sits on top of a window without hiding it.
+
+## 2a. Light and Dark Mode
+
+The badge follows Windows' **default app mode** (Settings → Personalization → Colors; the
+`AppsUseLightTheme` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize`).
+`BadgeTheme` holds the colours:
+
+| Mode | Badge | Items and underline |
+| --- | --- | --- |
+| Light (default, or value missing) | faint white | black |
+| Dark | faint black | white |
+
+Dark is the exact inverse of light at the same transparency, so only the hue changes. Switching modes
+recolours every circle live: `IndicatorApp` listens for `SystemEvents.UserPreferenceChanged`
+(category `General`), re-reads the value on the UI thread and hands the new theme to each window.
 
 ## 3. The Docking Interaction (the core rule)
 
@@ -87,7 +104,7 @@ The drag goes on: keep sliding along the new monitor's edges, or carry the works
 the first monitor moves the workspace back the same way, live.
 
 **Never on two circles.** While a drag carrying workspace *n* is in effect, the carrier lists *n*
-in white (and what it showed before as a plain number, since that stays homed there), every other
+underlined (and what it showed before as a plain number, since that stays homed there), every other
 badge drops
 *n*, and any badge that the latest snapshot still credits with *showing* *n* is hidden (fully
 transparent, so also click-through). Circles that hide are redrawn before those that appear, so *n* never
@@ -212,7 +229,7 @@ UI-thread heartbeat covers the stretches where nothing is redrawn.
   back and a workspace change republishes.
 - **The badge lists homed workspaces, not just occupied ones.** A workspace stays homed on a monitor from
   its first `Win+N` until it is released or moved, so it is listed even with no windows in it.
-- **A drag carries the workspace on screen** (the white one) and starts only from the grip; the other
+- **A drag carries the workspace on screen** (the underlined one) and starts only from the grip; the other
   numbers can't be dragged out individually.
 - **No keyboard interaction**; the circle is drag-only by design (it must never take focus). There is
   no cancel: a move happens as the cursor enters a monitor, so carry the workspace back to undo it.

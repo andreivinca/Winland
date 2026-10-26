@@ -266,8 +266,8 @@ bind = SUPER SHIFT B, firefox
 
 ## The on-screen workspace indicator
 
-Winland puts a small **translucent white circle on every monitor** showing the
-workspace that monitor is currently displaying — the number, `S` for the scratchpad, or `–` when the
+Winland puts a small **translucent badge on every monitor** (white, or black in Windows dark mode)
+listing its workspaces, with the one that monitor is currently displaying underlined — the number, `S` for the scratchpad, or `–` when the
 monitor shows no workspace. It updates the moment a workspace changes: `winland` broadcasts the
 new state and each circle redraws.
 

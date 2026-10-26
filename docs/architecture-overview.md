@@ -250,7 +250,7 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
   spaces; `shown` is the raw int on screen — `0` = the monitor shows nothing, `int.MaxValue` = the
   scratchpad — and `homed` the ascending, comma-separated workspaces homed there (possibly empty).
   `MonitorWorkspaces` writes and reads it; the client decides how to render it (the indicator lists
-  `1 4`, `1 4 S` with the on-screen one in white, or `–`).
+  `1 4`, `1 4 S` with the on-screen one underlined, or `–`).
 - A subscriber receives the current snapshot immediately on connect and a fresh one after each
   workspace change, so connecting before or after `winland` starts converges to the same state.
   After ~30 s without a change the current line is re-sent, which is how a subscriber that

@@ -56,6 +56,9 @@ internal sealed class IndicatorApp : ApplicationContext
     // The drag in effect: from the press until Winland shows where it left its workspace. Null otherwise.
     private WorkspaceDrag? _drag;
 
+    // The Windows app mode's colours, re-read whenever the user changes their preferences.
+    private BadgeTheme _theme = BadgeTheme.Current();
+
     private bool _disposed;
 
     public IndicatorApp()
@@ -68,6 +71,8 @@ internal sealed class IndicatorApp : ApplicationContext
         // Monitors come and go (undock, resolution change, a screen waking up).
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
+        // Switching Windows between light and dark mode recolours the circles live.
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         // Windows can silently demote a topmost overlay (display reset, DWM restart, sleep/wake).
         // Redraws reclaim the topmost band on their own; this covers the hours where nothing changes.
         _topmostHeartbeat = new System.Windows.Forms.Timer { Interval = 5000 };
@@ -84,6 +89,31 @@ internal sealed class IndicatorApp : ApplicationContext
     }
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e) => _poster.Post(SyncMonitors);
+
+    private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)
+    {
+        // The light/dark switch is reported as General (the Personalize key changed).
+        if (e.Category == UserPreferenceCategory.General)
+        {
+            _poster.Post(SyncTheme);
+        }
+    }
+
+    /// <summary>Re-read the Windows app mode (UI thread) and recolour every circle if it changed.</summary>
+    private void SyncTheme()
+    {
+        BadgeTheme theme = BadgeTheme.Current();
+        if (theme == _theme)
+        {
+            return;
+        }
+
+        _theme = theme;
+        foreach (IndicatorWindow window in _windows.Values)
+        {
+            window.ApplyTheme(theme);
+        }
+    }
 
     /// <summary>A fresh snapshot (UI thread): it may be the one a released drag waits for.</summary>
     private void ApplySnapshot(IReadOnlyDictionary<string, MonitorWorkspaces> snapshot)
@@ -216,7 +246,7 @@ internal sealed class IndicatorApp : ApplicationContext
                 continue;
             }
 
-            var window = new IndicatorWindow(monitor, DockPositionOf(monitor.Device));
+            var window = new IndicatorWindow(monitor, DockPositionOf(monitor.Device), _theme);
             window.DragStarted += grab => StartDrag(window, grab);
             window.DragMoved += MoveDrag;
             window.DragEnded += ReleaseDrag;
@@ -300,6 +330,7 @@ internal sealed class IndicatorApp : ApplicationContext
         {
             _disposed = true;
             SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _topmostHeartbeat.Dispose();
             _settleTimeout.Dispose();
             _client.Dispose();

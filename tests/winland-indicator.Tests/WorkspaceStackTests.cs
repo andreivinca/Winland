@@ -8,25 +8,25 @@ public sealed class WorkspaceStackTests
 {
     private static string[] ItemsOf(int shown, params int[] homed) =>
         WorkspaceStack.Items(new MonitorWorkspaces(@"\\.\DISPLAY1", shown, homed))
-            .Select(i => i.Active ? $"[{i.Text}]" : i.Text) // [n] = drawn in white: the one on screen
+            .Select(i => i.Active ? $"[{i.Text}]" : i.Text) // [n] = underlined: the one on screen
             .ToArray();
 
     [TestMethod]
-    public void AtStartup_EachMonitorListsItsOwnWorkspace_InWhite()
+    public void AtStartup_EachMonitorListsItsOwnWorkspace_Underlined()
     {
         CollectionAssert.AreEqual(new[] { "[1]" }, ItemsOf(1, 1));
         CollectionAssert.AreEqual(new[] { "[2]" }, ItemsOf(2, 2));
     }
 
     [TestMethod]
-    public void HomedWorkspaces_AreListedAscending_WithTheShownOneInWhite()
+    public void HomedWorkspaces_AreListedAscending_WithTheShownOneUnderlined()
     {
         CollectionAssert.AreEqual(new[] { "1", "[4]" }, ItemsOf(4, 4, 1));
         CollectionAssert.AreEqual(new[] { "[1]", "4", "17" }, ItemsOf(1, 1, 4, 17));
     }
 
     [TestMethod]
-    public void TheScratchpad_IsAppendedAsAWhiteS()
+    public void TheScratchpad_IsAppendedAsAnUnderlinedS()
     {
         CollectionAssert.AreEqual(new[] { "1", "4", "[S]" }, ItemsOf(Ipc.ScratchpadWorkspace, 1, 4));
         CollectionAssert.AreEqual(new[] { "[S]" }, ItemsOf(Ipc.ScratchpadWorkspace));

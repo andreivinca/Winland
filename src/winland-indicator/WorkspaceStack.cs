@@ -9,7 +9,7 @@ internal readonly record struct StackItem(string Text, bool Active);
 
 /// <summary>
 /// What one monitor's badge lists, in order: the workspaces homed on that monitor, ascending, by number —
-/// the one on screen marked <see cref="StackItem.Active"/> (drawn in white instead of black); then
+/// the one on screen marked <see cref="StackItem.Active"/> (underlined); then
 /// <see cref="Scratchpad"/>, active, while the roaming scratchpad is up there. A monitor with none of these
 /// lists <see cref="Nothing"/>.
 ///
