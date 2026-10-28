@@ -177,21 +177,29 @@ public sealed class StripLayoutTests
         Assert.IsTrue(result.Slots[1].Visible);
     }
 
-    // The whole monitor, taskbar included: what a fullscreen tile covers.
-    private static readonly TileRect Screen = new(0, 0, 1920, 1080);
-
     [TestMethod]
-    public void WithFullscreen_ATileInView_CoversTheScreenAndTheOthersKeepTheirColumns()
+    public void WithFullscreen_ATileInView_FillsTheWorkAreaInsideTheGapAndTheOthersKeepTheirColumns()
     {
         StripArrangement strip = StripLayout.Arrange(Work, Dpi, tileCount: 3, first: 0, reveal: NoReveal);
 
-        StripArrangement result = StripLayout.WithFullscreen(strip, fullscreen: 1, Screen);
+        StripArrangement result = StripLayout.WithFullscreen(strip, fullscreen: 1, Work, Dpi);
 
-        Assert.AreEqual(new TileSlot(Screen, Visible: true), result.Slots[1]);
+        // Where a lone tile stands: the taskbar (below Work) stays uncovered.
+        Assert.AreEqual(new TileSlot(new TileRect(Gap, Gap, 1920 - Gap, 1040 - Gap), Visible: true), result.Slots[1]);
         Assert.AreEqual(strip.Slots[0], result.Slots[0]);
         Assert.AreEqual(strip.Slots[2], result.Slots[2]);
         Assert.AreEqual(strip.First, result.First, "the strip doesn't scroll");
         Assert.AreEqual(strip.VisibleCount, result.VisibleCount, "its column stays reserved");
+    }
+
+    [TestMethod]
+    public void WithFullscreen_OnAHighDpiMonitor_ScalesTheGap()
+    {
+        StripArrangement strip = StripLayout.Arrange(Work, dpi: 192, tileCount: 1, first: 0, reveal: NoReveal);
+
+        StripArrangement result = StripLayout.WithFullscreen(strip, fullscreen: 0, Work, dpi: 192);
+
+        Assert.AreEqual(new TileRect(2 * Gap, 2 * Gap, 1920 - 2 * Gap, 1040 - 2 * Gap), result.Slots[0].Rect);
     }
 
     [TestMethod]
@@ -200,7 +208,7 @@ public sealed class StripLayoutTests
         // Five tiles, three in view: tile 4 is scrolled out.
         StripArrangement strip = StripLayout.Arrange(Work, Dpi, tileCount: 5, first: 0, reveal: NoReveal);
 
-        StripArrangement result = StripLayout.WithFullscreen(strip, fullscreen: 4, Screen);
+        StripArrangement result = StripLayout.WithFullscreen(strip, fullscreen: 4, Work, Dpi);
 
         Assert.AreSame(strip, result);
     }
@@ -210,7 +218,7 @@ public sealed class StripLayoutTests
     {
         StripArrangement strip = StripLayout.Arrange(Work, Dpi, tileCount: 2, first: 0, reveal: NoReveal);
 
-        Assert.AreSame(strip, StripLayout.WithFullscreen(strip, fullscreen: -1, Screen));
-        Assert.AreSame(strip, StripLayout.WithFullscreen(strip, fullscreen: 2, Screen));
+        Assert.AreSame(strip, StripLayout.WithFullscreen(strip, fullscreen: -1, Work, Dpi));
+        Assert.AreSame(strip, StripLayout.WithFullscreen(strip, fullscreen: 2, Work, Dpi));
     }
 }

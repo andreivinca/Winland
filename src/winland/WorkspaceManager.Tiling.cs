@@ -56,7 +56,7 @@ internal sealed partial class WorkspaceManager
         public bool Shows(IntPtr hWnd) => ColumnOf(hWnd) != null;
 
         /// <summary>
-        /// Where a tile was shown — its column, or the whole monitor for the fullscreen tile — or null when
+        /// Where a tile was shown — its column, or the whole work area for the fullscreen tile — or null when
         /// it isn't in view (or isn't a tile here).
         /// </summary>
         public TileRect? ColumnOf(IntPtr hWnd)
@@ -438,18 +438,20 @@ internal sealed partial class WorkspaceManager
     /// <summary>
     /// Arrange a workspace's strip on <paramref name="monitor"/>, scrolled the least needed to show
     /// <paramref name="reveal"/> (Zero: keep the current scroll position). Visible tiles are restored into
-    /// their columns — its fullscreen tile onto the whole monitor instead; the rest are minimized.
+    /// their columns — its fullscreen tile over the whole work area instead; the rest are minimized.
     /// </summary>
     private void LayoutWorkspace(int workspace, MonitorState monitor, IntPtr reveal)
     {
         List<IntPtr> tiles = TilesOf(workspace);
+        TileRect work = ToTileRect(monitor.Work);
+        int dpi = DpiOf(monitor.Handle);
         StripArrangement strip = StripLayout.Arrange(
-            ToTileRect(monitor.Work),
-            DpiOf(monitor.Handle),
+            work,
+            dpi,
             tiles.Count,
             _scrollFirst.GetValueOrDefault(workspace),
             tiles.IndexOf(reveal));
-        strip = StripLayout.WithFullscreen(strip, tiles.IndexOf(FullscreenTileOf(workspace)), ToTileRect(monitor.Bounds));
+        strip = StripLayout.WithFullscreen(strip, tiles.IndexOf(FullscreenTileOf(workspace)), work, dpi);
 
         _scrollFirst[workspace] = strip.First;
         _arranged[workspace] = new Arrangement(tiles.ToArray(), strip);

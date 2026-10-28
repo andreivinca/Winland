@@ -30,7 +30,6 @@ internal sealed partial class WorkspaceManager : IDisposable
         public IntPtr Handle;
         public string Device = "";   // stable GDI device name (e.g. \\.\DISPLAY1) — survives handle reissue
         public RECT Work;
-        public RECT Bounds;          // the whole monitor, taskbar included (what a fullscreen tile covers)
         public bool Primary;
         public int Current = NoWorkspace;
     }
@@ -109,7 +108,6 @@ internal sealed partial class WorkspaceManager : IDisposable
     public void Dispose()
     {
         DisarmLaunchPlacement();
-        EndAllFullscreen();
         _reflowTimer.Dispose();
 
         foreach (IntPtr hook in _winEventHooks)
@@ -137,7 +135,6 @@ internal sealed partial class WorkspaceManager : IDisposable
                     Handle = hMon,
                     Device = info.szDevice ?? "",
                     Work = info.rcWork,
-                    Bounds = info.rcMonitor,
                     Primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0
                 });
             }

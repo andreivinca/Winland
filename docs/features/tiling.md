@@ -64,7 +64,7 @@ their place in the order but take no column.
 | `movetoworkspace n` | Re-link as a tile of `n` (after `n`'s focused tile), switch to `n`, focus it. The old workspace closes the gap if it is on screen. |
 | `focus left\|right` | On a tile: focus the neighbouring tile and scroll it into view. Past either end of the strip, on any other window, or for `up`/`down`: geometric `FocusNearest` (see `window-focus.md`). |
 | `move-window left\|right` | On a tile: trade places with the neighbour (`TileOrder.MoveTo`). At the end of the strip: join the workspace shown on the adjacent monitor in that direction, entering at the near end (no-op if it shows none). On any other window: `MoveWindowToMonitor` to the adjacent monitor, membership unchanged. |
-| `toggle-fullscreen` | On a tile: cover its whole monitor, keeping its column reserved; again: back into the column (§3.1). On any other window: no-op. |
+| `toggle-fullscreen` | On a tile: fill its monitor's whole work area (inside the gap, taskbar stays visible), keeping its column reserved; again: back into the column (§3.1). On any other window: no-op. |
 
 Showing a workspace (`ShowWorkspace`) lays out its strip, restores its minimized floating windows in
 place, on whatever monitor they are (`RestoreInPlace`, maximized again if they were), focuses it, and
@@ -86,8 +86,9 @@ tile if focus or its position changed and the cursor isn't over it already (`Cur
 ### 3.1 Fullscreen (`toggle-fullscreen`, `Win+Alt+F`)
 
 Code: `WorkspaceManager.Fullscreen.cs`. On a tile of a workspace that is on screen, `toggle-fullscreen`
-makes it cover its monitor's **whole bounds** (`rcMonitor`, taskbar included) instead of its column;
-again, it goes back into the column. On any other window it does nothing.
+makes it fill its monitor's **whole work area inside the usual gap** (`rcWork`, where a lone tile would
+stand) instead of its column; again, it goes back into the column. On any other window it does nothing.
+It is not real fullscreen: the taskbar stays visible and is never covered.
 
 - The tile **keeps its place in the strip**: `StripLayout.WithFullscreen` replaces only its slot's
   rectangle, so the scroll position, the column count and every other tile stay as they were — its
@@ -99,14 +100,11 @@ again, it goes back into the column. On any other window it does nothing.
   it out of view (hidden like any tile) and back.
 - It ends when the window stops being a tile of that workspace: dragged out to float (`FloatIfMoved`),
   unlinked or moved to another workspace (`ForgetTile`), or closed (pruned in `WindowsOf`). Unlinked,
-  the window is left where it is — still covering the monitor — like any unlinked window.
+  the window is left where it is — still filling the work area — like any unlinked window.
 - Focusing another tile of the workspace brings that tile in front of the fullscreen one, in its column.
-- The shell is told the window is fullscreen (`ITaskbarList2::MarkFullscreenWindow`), so the always-on-top
-  taskbar steps behind it while it is the active window; ending fullscreen — and exiting Winland —
-  unmarks it. A failed call is logged, and the window still covers the monitor.
 - The window keeps its title bar: Winland doesn't change other apps' window styles.
 - `FloatIfMoved` compares the frame with where the last layout put the tile (`Arrangement.ColumnOf`, the
-  monitor for the fullscreen tile), so a click on a fullscreen tile's title bar doesn't float it.
+  whole work area for the fullscreen tile), so a click on a fullscreen tile's title bar doesn't float it.
 
 ## 4. Reacting to Window Events
 
@@ -163,8 +161,8 @@ workspace shown there (`TileLaunchedWindow`). Windows opened any other way stay 
 
 - Keep geometry in `StripLayout` and ordering in `TileOrder` — pure and unit-tested — and Win32 in
   `WorkspaceManager.Tiling.cs`.
-- Never position a tile outside its monitor's work area; hide it instead (§2.1). The one exception is
-  the fullscreen tile, which covers its monitor's whole bounds (§3.1) — still never another monitor.
+- Never position a tile outside its monitor's work area; hide it instead (§2.1). The fullscreen tile
+  (§3.1) follows the same rule: it fills the work area inside the gap, never the taskbar.
 - New window-event reactions must queue work for the reflow timer rather than lay out in the callback,
   and must never change membership.
 - Every layout goes through `LayoutWorkspace`, which records `_arranged` — the source for "is this tile

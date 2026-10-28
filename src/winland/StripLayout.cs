@@ -81,12 +81,13 @@ internal static class StripLayout
     }
 
     /// <summary>
-    /// <paramref name="strip"/> with tile <paramref name="fullscreen"/> covering <paramref name="screen"/> (the
-    /// whole monitor) instead of its column. Nothing else moves: the strip keeps its scroll position and the
-    /// tile keeps its column, reserved behind it, so leaving fullscreen puts it straight back. A tile out of
-    /// view stays hidden in its parking column; -1 (or any index outside the strip) means no fullscreen tile.
+    /// <paramref name="strip"/> with tile <paramref name="fullscreen"/> filling the whole <paramref name="work"/>
+    /// area, inside the usual gap — where a lone tile would stand — instead of its column. The taskbar stays
+    /// visible. Nothing else moves: the strip keeps its scroll position and the tile keeps its column,
+    /// reserved behind it, so leaving fullscreen puts it straight back. A tile out of view stays hidden in
+    /// its parking column; -1 (or any index outside the strip) means no fullscreen tile.
     /// </summary>
-    public static StripArrangement WithFullscreen(StripArrangement strip, int fullscreen, TileRect screen)
+    public static StripArrangement WithFullscreen(StripArrangement strip, int fullscreen, TileRect work, int dpi)
     {
         if (fullscreen < 0 || fullscreen >= strip.Slots.Count || !strip.Slots[fullscreen].Visible)
         {
@@ -94,7 +95,7 @@ internal static class StripLayout
         }
 
         TileSlot[] slots = strip.Slots.ToArray();
-        slots[fullscreen] = new TileSlot(screen, Visible: true);
+        slots[fullscreen] = new TileSlot(Column(work, Scale(BaseGap, dpi), columns: 1, column: 0), Visible: true);
         return strip with { Slots = slots };
     }
 
