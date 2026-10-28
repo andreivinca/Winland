@@ -16,7 +16,7 @@ public sealed class WorkspaceDragTests
         new(from, workspace, new Dictionary<string, DockState> { [Left] = LeftDock, [Right] = RightDock });
 
     [TestMethod]
-    [DataRow(0)]
+    [DataRow(Ipc.NoWorkspace)]
     [DataRow(Ipc.ScratchpadWorkspace)]
     public void ADashOrTheScratchpad_CarriesNothing_AndStaysWithItsCircle(int shown)
     {
@@ -24,9 +24,19 @@ public sealed class WorkspaceDragTests
 
         bool moved = drag.Follow(Right);
 
-        Assert.AreEqual(0, drag.Workspace);
+        Assert.AreEqual(Ipc.NoWorkspace, drag.Workspace);
         Assert.IsFalse(moved);
         Assert.AreEqual(Left, drag.Carrier);
+    }
+
+    [TestMethod]
+    public void WorkspaceZero_IsCarriedLikeAnyOther()
+    {
+        WorkspaceDrag drag = DragOf(0);
+
+        Assert.AreEqual(0, drag.Workspace);
+        Assert.IsTrue(drag.Follow(Right));
+        Assert.AreEqual(Right, drag.Carrier);
     }
 
     [TestMethod]
@@ -96,8 +106,8 @@ public sealed class WorkspaceDragTests
     [TestMethod]
     public void Badge_WhenNothingIsCarried_ShowsTheSnapshot()
     {
-        WorkspaceDrag drag = DragOf(0);
-        MonitorWorkspaces left = Monitor(Left, shown: 0);
+        WorkspaceDrag drag = DragOf(Ipc.NoWorkspace);
+        MonitorWorkspaces left = Monitor(Left, shown: Ipc.NoWorkspace);
         MonitorWorkspaces right = Monitor(Right, shown: 5, 5);
 
         Assert.AreEqual((left, true), drag.Badge(left));
@@ -132,9 +142,9 @@ public sealed class WorkspaceDragTests
     [TestMethod]
     public void IsSettled_ADragThatCarriedNothing_SettlesOnRelease()
     {
-        WorkspaceDrag drag = DragOf(0);
+        WorkspaceDrag drag = DragOf(Ipc.NoWorkspace);
         drag.Release();
 
-        Assert.IsTrue(drag.IsSettled(shownOnCarrier: 0));
+        Assert.IsTrue(drag.IsSettled(shownOnCarrier: Ipc.NoWorkspace));
     }
 }

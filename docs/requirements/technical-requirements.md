@@ -85,7 +85,7 @@
 ### 4.4 Combo → Command Mapping (no hardcoded actions)
 - There are **no hardcoded built-in actions**. Every Super combo — including workspaces, arrows,
   close, and release — is an ordinary `bind` in `config.conf` whose command is `winlandctl <verb>`:
-  - `Win+1..9` / `Win+NumPad1..9` → `winlandctl workspace <n>`
+  - `Win+0..9` / `Win+NumPad0..9` → `winlandctl workspace <n>`; `Win+Alt+0..9` → 10..19
   - `Win+Shift+W` → `winlandctl workspace-release`
   - `Win+Left/Up/Right/Down` → `winlandctl focus <dir>`
   - `Win+W` → `winlandctl close`
@@ -121,7 +121,7 @@ on the command pipe.
   its line is dropped after a read timeout (it must not wedge the single-connection server).
 
 ### 5.3 Dispatcher verbs
-- `workspace <n>` / `movetoworkspace <n>` (n >= 1; the scratchpad id is rejected),
+- `workspace <n>` / `movetoworkspace <n>` (n >= 0; the scratchpad id is rejected),
   `move-workspace <n> <device>` (same rule for n; `ERR` when no monitor with that device name is
   attached), `link-here`,
   `unlink`, `toggle-tile`, `toggle-fullscreen`, `scratchpad`, `workspace-release`, `focus <left|right|up|down>`,
@@ -140,8 +140,8 @@ on the command pipe.
   asynchronous, several server instances (8), created with the same user ACL so unelevated
   subscribers can attach. `winland` is the server; `winland-indicator` is the client.
 - Message grammar: one line per snapshot — space-separated `<device>=<shown>:<homed>` entries, ordered
-  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. The device is the stable GDI display name
-  (contains no space); `shown` is the raw int: `0` = the monitor shows no workspace,
+  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. The device is the stable GDI display name
+  (contains no space); `shown` is the raw int: `-1` (`Ipc.NoWorkspace`) = the monitor shows no workspace,
   `int.MaxValue` = the scratchpad; `homed` is the ascending, comma-separated list of workspaces homed
   on that monitor (possibly empty). Written and read only by `Winland.Common.MonitorWorkspaces`.
   Rendering is the client's job.
@@ -159,7 +159,7 @@ on the command pipe.
 ## 6. Workspace System Requirements (`winland`)
 
 ### 6.1 Workspace Domain Model
-- No fixed workspace count — any whole number >= 1. The shipped config binds 1..9 and 11..19, but a
+- No fixed workspace count — any whole number >= 0. The shipped config binds 0..19, but a
   user can bind any key to any number (e.g. `bind = SUPER F1, winlandctl workspace 20`).
 - `int.MaxValue` is reserved for the scratchpad (a roaming workspace with no home monitor, toggled
   by the `scratchpad` verb).
@@ -195,7 +195,7 @@ on the command pipe.
 ### 6.4 Release Semantics
 - `ReleaseCurrentWorkspace()` acts on the active monitor (under the cursor): minimize its visible
   windows and the released workspace's windows floating elsewhere (members stay assigned), remove the
-  workspace's home binding, set the monitor's current workspace to `0` (none shown).
+  workspace's home binding, set the monitor's current workspace to `NoWorkspace` (-1, none shown).
 
 ### 6.4a Moving a Workspace
 - `MoveWorkspaceToMonitor(n, device)` re-homes `n` to the target monitor and shows it there: the

@@ -32,10 +32,10 @@ internal sealed partial class WorkspaceManager : IDisposable
         public RECT Work;
         public RECT Bounds;          // the whole monitor, taskbar included (what a fullscreen tile covers)
         public bool Primary;
-        public int Current;
+        public int Current = NoWorkspace;
     }
 
-    // window handle -> workspace number (any integer >= 1). The single source of truth for membership.
+    // window handle -> workspace number (any integer >= 0). The single source of truth for membership.
     private readonly Dictionary<IntPtr, int> _windowWorkspace = new();
     // workspace -> most recently focused window (restores focus after a switch, and keeps it in view).
     private readonly Dictionary<int, IntPtr> _lastActive = new();
@@ -43,7 +43,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // sleep/wake/display-config changes). Set the first time the workspace is entered and kept until released.
     private readonly Dictionary<int, string> _workspaceHome = new();
     // device name -> the workspace currently shown on that monitor. Survives the monitor temporarily
-    // dropping out of enumeration (sleep/power-off), so a wake restores what it was showing instead of 0.
+    // dropping out of enumeration (sleep/power-off), so a wake restores what it was showing instead of nothing.
     private readonly Dictionary<string, int> _shownByDevice = new();
     // workspace -> when it was last shown (a tick of _showClock; higher = more recent). A monitor whose
     // workspace is moved away goes back to the one it showed before (see PreviousWorkspace).
@@ -57,9 +57,11 @@ internal sealed partial class WorkspaceManager : IDisposable
     // monitor under the mouse. It is a normal membership tag in _windowWorkspace (so windows attach to it
     // via link/move like any workspace), reserved at a value no real workspace will reach.
     public const int ScratchpadWorkspace = Ipc.ScratchpadWorkspace;
+    // What a monitor showing no workspace has as Current. Workspace 0 is a real workspace, so it isn't 0.
+    private const int NoWorkspace = Ipc.NoWorkspace;
     // While the scratchpad is shown, the workspace its monitor was showing beforehand — restored when the
-    // scratchpad is toggled off or relocated away. 0 means "the monitor was showing nothing".
-    private int _scratchpadReturn;
+    // scratchpad is toggled off or relocated away. NoWorkspace means "the monitor was showing nothing".
+    private int _scratchpadReturn = NoWorkspace;
 
     private readonly WinEventDelegate _winEventProc;
     private readonly List<IntPtr> _winEventHooks = new();
@@ -72,7 +74,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     public event Action<IReadOnlyList<MonitorWorkspaces>>? WorkspacesChanged;
 
     /// <summary>
-    /// Each live monitor, ordered left-to-right: what it is showing (raw: 0 = nothing,
+    /// Each live monitor, ordered left-to-right: what it is showing (raw: <see cref="NoWorkspace"/> = nothing,
     /// <see cref="ScratchpadWorkspace"/> = the scratchpad) and the workspaces homed on it, ascending.
     /// A monitor that is asleep (out of enumeration) is absent — it has nothing on screen to label.
     /// </summary>
@@ -121,7 +123,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         _winEventHooks.Clear();
     }
 
-    /// <summary>Enumerate physical monitors, left-to-right, as fresh states (Current = 0).</summary>
+    /// <summary>Enumerate physical monitors, left-to-right, as fresh states (Current = NoWorkspace).</summary>
     private List<MonitorState> EnumerateMonitors()
     {
         var found = new List<MonitorState>();
@@ -181,7 +183,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// We key all persistent state (workspace homes, what each monitor is showing) on the stable GDI
     /// device name (\\.\DISPLAYn) rather than the volatile HMONITOR. A monitor that sleeps simply stops
     /// enumerating; we keep its shown-workspace in <see cref="_shownByDevice"/> and restore it by device
-    /// name when it wakes — so a sleep/wake no longer resets the monitor to "no workspace" (WS0) or
+    /// name when it wakes — so a sleep/wake no longer resets the monitor to "no workspace" or
     /// orphans its homed workspaces. Called before each switch/release.
     /// </summary>
     private void RefreshMonitors()
@@ -193,7 +195,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         }
 
         // Restore each live monitor's shown workspace from the stable per-device record. A monitor that
-        // was asleep keeps the workspace it had; a brand-new monitor starts at 0 (shows nothing yet).
+        // was asleep keeps the workspace it had; a brand-new monitor starts showing nothing.
         foreach (MonitorState m in current)
         {
             if (_shownByDevice.TryGetValue(m.Device, out int shown))
@@ -210,14 +212,14 @@ internal sealed partial class WorkspaceManager : IDisposable
     }
 
     /// <summary>
-    /// Handle a switch to workspace <paramref name="k"/> (any integer >= 1). Each workspace is linked
+    /// Handle a switch to workspace <paramref name="k"/> (any integer >= 0). Each workspace is linked
     /// to a home monitor — set the first time it's entered, to the monitor under the mouse cursor. Win+k
     /// always acts on k's home monitor: put away everything there that isn't k's — unlinked windows
     /// included — and lay out k's strip (an empty monitor the first time). Other monitors are untouched.
     /// </summary>
     public void SwitchFocusedMonitorTo(int k)
     {
-        if (k < 1 || k == ScratchpadWorkspace)
+        if (!Ipc.IsNumberedWorkspace(k))
         {
             return; // the scratchpad is only ever entered through its own toggle
         }
@@ -243,7 +245,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         // Before putting the outgoing workspace away, remember its focused tile so focus returns there.
         // (Skip on a re-press of the same workspace — nothing is changing.)
-        if (!already && outgoing >= 1)
+        if (!already && outgoing != NoWorkspace)
         {
             RememberFrontmost(outgoing, home);
         }
@@ -253,7 +255,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         // left alone — switching never links or unlinks a window; only move (Win+Shift+N), tile (Win+T),
         // unlink (Win+Shift+Space), or closing does.
         MinimizeMonitorWindows(home, keep: k);
-        if (!already && outgoing >= 1)
+        if (!already && outgoing != NoWorkspace)
         {
             PutAwayWorkspace(outgoing);
         }
@@ -308,18 +310,18 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// </summary>
     private void SetShown(MonitorState monitor, int workspace)
     {
-        if (workspace >= 1)
+        if (workspace != NoWorkspace)
         {
             _lastShown[workspace] = ++_showClock;
             foreach (string dev in _shownByDevice
                          .Where(kv => kv.Value == workspace && kv.Key != monitor.Device)
                          .Select(kv => kv.Key).ToList())
             {
-                _shownByDevice[dev] = 0;
+                _shownByDevice[dev] = NoWorkspace;
                 MonitorState? other = _monitors.Values.FirstOrDefault(m => m.Device == dev);
                 if (other != null && other.Current == workspace)
                 {
-                    other.Current = 0;
+                    other.Current = NoWorkspace;
                 }
             }
         }
@@ -339,7 +341,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     {
         RefreshMonitors(); // keep monitor handles live across display-config changes
         MonitorState? m = GetActiveMonitor();
-        if (m == null || m.Current < 1)
+        if (m == null || m.Current == NoWorkspace)
         {
             return;
         }
@@ -348,18 +350,18 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         GuardEvents();
         RememberFrontmost(w, m);                // so focus returns to the same tile
-        MinimizeMonitorWindows(m, keep: -1);    // put away every window on this monitor
+        MinimizeMonitorWindows(m, keep: NoWorkspace); // put away every window on this monitor
         PutAwayWorkspace(w);                    // and the workspace's windows floating on other monitors
         if (w == ScratchpadWorkspace)
         {
-            _scratchpadReturn = 0;              // released, not toggled off — nothing to return to
+            _scratchpadReturn = NoWorkspace;    // released, not toggled off — nothing to return to
         }
         else
         {
             _workspaceHome.Remove(w);           // unpin: Win+w re-homes to the cursor monitor next time
         }
-        m.Current = 0;                          // monitor now shows no workspace
-        _shownByDevice[m.Device] = 0;
+        m.Current = NoWorkspace;                // monitor now shows no workspace
+        _shownByDevice[m.Device] = NoWorkspace;
         GuardEvents();
 
         LogWorkspaces($"release {WsLabel(w)}");
@@ -374,7 +376,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// </summary>
     public void MoveFocusedWindowToWorkspace(int n)
     {
-        if (n < 1 || n == ScratchpadWorkspace)
+        if (!Ipc.IsNumberedWorkspace(n))
         {
             return; // windows join the scratchpad via link (Win+T) while it is shown
         }
@@ -439,7 +441,7 @@ internal sealed partial class WorkspaceManager : IDisposable
         {
             // Toggle off: the mouse is on the scratchpad's monitor — restore its previous workspace.
             BringCursorTo(RenderWorkspaceOn(showing, _scratchpadReturn), showing);
-            _scratchpadReturn = 0;
+            _scratchpadReturn = NoWorkspace;
 
             GuardEvents();
             LogWorkspaces("scratchpad off");
@@ -456,7 +458,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         // Remember what the mouse monitor is showing now (to return to on toggle-off), then bring the
         // scratchpad and its windows here.
-        _scratchpadReturn = target.Current >= 1 ? target.Current : 0;
+        _scratchpadReturn = target.Current; // a numbered workspace, or NoWorkspace (the scratchpad isn't here)
         BringCursorTo(RenderWorkspaceOn(target, ScratchpadWorkspace), target);
 
         GuardEvents();
@@ -467,13 +469,13 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// <summary>
     /// Show <paramref name="workspace"/> on a specific monitor (no home resolution): put away everything there
     /// that isn't its (and the outgoing workspace's windows elsewhere), record it as shown, bring its windows
-    /// onto the screen, and land focus. <paramref name="workspace"/> &lt; 1 means "show nothing". Returns the
+    /// onto the screen, and land focus. <see cref="NoWorkspace"/> means "show nothing". Returns the
     /// window it focused, or Zero.
     /// </summary>
     private IntPtr RenderWorkspaceOn(MonitorState monitor, int workspace)
     {
         int outgoing = monitor.Current;
-        bool changing = outgoing >= 1 && outgoing != workspace;
+        bool changing = outgoing != NoWorkspace && outgoing != workspace;
         if (changing)
         {
             RememberFrontmost(outgoing, monitor);
@@ -487,7 +489,7 @@ internal sealed partial class WorkspaceManager : IDisposable
 
         SetShown(monitor, workspace);
 
-        if (workspace < 1)
+        if (workspace == NoWorkspace)
         {
             return IntPtr.Zero;
         }
@@ -543,7 +545,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     // event guard window (e.g. clicking a window then immediately toggling the scratchpad).
     private void RememberFrontmost(int workspace, MonitorState monitor)
     {
-        if (workspace < 1)
+        if (workspace == NoWorkspace)
         {
             return;
         }
@@ -562,7 +564,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     }
 
     // Minimize every visible managed window physically on the monitor, except the windows of workspace
-    // <paramref name="keep"/> (pass -1 to keep none) — unlinked windows and other workspaces' floating
+    // <paramref name="keep"/> (pass NoWorkspace to keep none) — unlinked windows and other workspaces' floating
     // windows included, so the monitor shows only the workspace being switched to (an empty workspace
     // means an empty monitor). Membership is NOT touched: a put-away member returns with its workspace, and
     // an unlinked window stays unlinked. Windows are linked only by an explicit command, never by switching.
@@ -848,8 +850,12 @@ internal sealed partial class WorkspaceManager : IDisposable
         Log.Line(line);
     }
 
-    private static string WsLabel(int workspace) =>
-        workspace == ScratchpadWorkspace ? "SCRATCH" : $"WS{workspace}";
+    private static string WsLabel(int workspace) => workspace switch
+    {
+        ScratchpadWorkspace => "SCRATCH",
+        NoWorkspace => "none",
+        _ => $"WS{workspace}"
+    };
 
     // ----- Win32 -----
 

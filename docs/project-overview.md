@@ -16,7 +16,7 @@ one app, **`winland`**, which runs two companion processes and ends them when it
 - **`winlandctl`** — a one-shot CLI that forwards a single command to `winland` over its pipe.
 
 Current core capabilities:
-- Per-monitor numbered workspaces (unbounded; `1..9` and `11..19` bound by default), plus a roaming
+- Per-monitor numbered workspaces (unbounded from 0; `0..19` bound by default), plus a roaming
   scratchpad (`Win+S`)
 - Opt-in scrolling tiling: tiling a window (`Win+T`) or moving it to a workspace (`Win+Shift+N`)
   makes it a tile in that workspace's row, which shares the monitor and scrolls once tiles no longer
@@ -61,7 +61,7 @@ the keys daemon. `winland` only ever acts on commands that arrive on its pipe.
 ## 5. Feature Summary
 
 ### 5.1 Workspaces
-- `Win+1..9` switches/focuses a workspace (`winlandctl workspace N`); `Win+Alt+1..9` reaches 11..19.
+- `Win+0..9` switches/focuses workspace 0..9 (`winlandctl workspace N`); `Win+Alt+0..9` reaches 10..19.
 - `Win+Shift+N` moves the focused window to workspace N as a tile (`winlandctl movetoworkspace N`);
   `Win+T` tiles it into the current workspace, or unlinks it if it is a tile (`winlandctl toggle-tile`);
   `Win+Shift+Space` makes it

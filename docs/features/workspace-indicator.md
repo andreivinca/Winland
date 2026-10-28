@@ -169,8 +169,8 @@ log), `winland-indicator-dock.txt`:
 (`Ipc.EventsPipeName`), which is **outbound only** — nothing a subscriber could write is ever read.
 
 - **Message**: one line per snapshot, space-separated `<device>=<shown>:<homed>` entries ordered
-  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. Device names contain no spaces, so the format
-  needs no escaping. `shown` is the **raw** number on screen: `0` = nothing shown, `int.MaxValue` = the
+  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. Device names contain no spaces, so the format
+  needs no escaping. `shown` is the **raw** number on screen: `-1` (`Ipc.NoWorkspace`) = nothing shown, `int.MaxValue` = the
   scratchpad. `homed` is the comma-separated, ascending list of workspaces whose home is that monitor
   (possibly empty). `MonitorWorkspaces` (in `Winland.Common`) is the one place it is written and read;
   turning it into the badge's items is the client's business.

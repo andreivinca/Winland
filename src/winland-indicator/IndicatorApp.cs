@@ -129,7 +129,7 @@ internal sealed class IndicatorApp : ApplicationContext
     }
 
     private MonitorWorkspaces MonitorOf(string device) =>
-        _workspaces.TryGetValue(device, out MonitorWorkspaces? monitor) ? monitor : new MonitorWorkspaces(device, 0, []);
+        _workspaces.TryGetValue(device, out MonitorWorkspaces? monitor) ? monitor : new MonitorWorkspaces(device, Ipc.NoWorkspace, []);
 
     /// <summary>
     /// Give every circle its place and contents: the workspaces the latest snapshot lists for its monitor, at

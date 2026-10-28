@@ -51,7 +51,9 @@ automatically at every logon without a UAC prompt, see [Auto-start at logon](#au
 - **Drag a tile** (or resize it) with the mouse and it leaves the row and
   **floats** right where it is — Windows handles it from then on — but it stays in its workspace: it's put
   away and brought back with it, exactly where you left it and in front of the tiles, even on another
-  monitor. `Win+T` puts it back in its own workspace's row.
+  monitor. `Win+T` tiles it into the workspace shown on the monitor it's on now: back into its own
+  row if you left it on its workspace's monitor, or into the other monitor's workspace if you dragged it
+  there (it leaves its old workspace).
 - **`Win+T` on a tile unlinks it**: it leaves its workspace and is a normal window again.
 - There's also a **scratchpad** (`Win+S`): a workspace with no home monitor that pops up on whatever
   monitor your mouse is on, and disappears again on the next press.
@@ -67,8 +69,8 @@ These are the **defaults** — every one is just a line in `config.conf`, so you
 
 | Shortcut | What it does |
 | --- | --- |
-| `Win`+`1` … `Win`+`9` | Show workspace 1–9 on its home monitor (top-row digits **or** numpad). |
-| `Win`+`Alt`+`1` … `9` | Show workspace 11–19. |
+| `Win`+`0` … `Win`+`9` | Show workspace 0–9 on its home monitor (top-row digits **or** numpad). |
+| `Win`+`Alt`+`0` … `9` | Show workspace 10–19. |
 
 Pressing `Win`+`N` always **re-asserts** workspace N on its monitor: it minimizes anything there that
 isn't N's (normal windows included), lays N's tiles out again — **including ones you minimized** or
@@ -85,8 +87,8 @@ monitor under your **mouse cursor** and is pinned there from then on.
 
 | Shortcut | What it does |
 | --- | --- |
-| `Win`+`Shift`+`1` … `9` | Move the **focused** window to workspace 1–9 and follow it there. |
-| `Win`+`Shift`+`Alt`+`1` … `9` | Move the focused window to workspace 11–19. |
+| `Win`+`Shift`+`0` … `9` | Move the **focused** window to workspace 0–9 and follow it there. |
+| `Win`+`Shift`+`Alt`+`0` … `9` | Move the focused window to workspace 10–19. |
 
 The window becomes a tile of the target workspace, right after the tile that had focus there, and its
 old workspace closes the gap. The target workspace becomes active (on its home monitor) and the window
@@ -98,7 +100,7 @@ ends up in view and focused — if the target lives on a different monitor, the 
 | --- | --- |
 | `Win`+`Space` | **Tile** the focused window into the workspace shown on its monitor. On a floating window of that workspace, put it back in its place in the row; on a tile, snap it back into its column. |
 | `Win`+`Shift`+`Space` | **Unlink** the focused window: it leaves its workspace and becomes a normal window again, and the other tiles close the gap. |
-| `Win`+`T` | **Pop out / put back.** On a tile: it floats where it is, still in its workspace, and the row closes the gap. On a floating window: it goes back into its **own** workspace's row at its old place — even from another monitor (if that workspace isn't shown, it is shown). On a window in no workspace: same as `Win`+`Space`. |
+| `Win`+`T` | **Tile / untile.** On a tile: unlink it — it leaves its workspace and is a normal window again, and the row closes the gap. On a floating window or a window in no workspace: tile it into the workspace shown on the monitor it's on **now**. A floating window you dragged to another monitor leaves its old workspace and joins that monitor's; one still on its own workspace's monitor goes back to its old place in the row. Does nothing on a monitor that shows no workspace. |
 | `Win`+`←` `→` | On a tile: focus the tile beside it, scrolling the row if it's out of view. Past either end of the row (or on any other window), focus the nearest window in that direction. |
 | `Win`+`Shift`+`←` `→` | On a tile: swap it with its neighbour; from the end of the row it moves onto the next monitor's workspace. On any other window: move it to the next monitor (a floating window stays in its workspace). |
 | `Win`+`Alt`+`F` | **Fullscreen / back.** On a tile: it covers its whole monitor, taskbar included, and keeps its place in the row — press again and it is back in its column. It stays in its workspace (and stays fullscreen when the workspace is put away and shown again). Dragging it out or unlinking it ends fullscreen. One fullscreen tile per workspace. |
@@ -201,11 +203,11 @@ them yourself from a terminal):
 
 | Command | Effect |
 | --- | --- |
-| `winlandctl workspace <n>` | Switch to / re-assert workspace `n` (any whole number ≥ 1). |
+| `winlandctl workspace <n>` | Switch to / re-assert workspace `n` (any whole number ≥ 0). |
 | `winlandctl movetoworkspace <n>` | Move the focused window to workspace `n` (as a tile) and follow it. |
 | `winlandctl link-here` | Tile the focused window into the workspace shown on its monitor. |
 | `winlandctl unlink` | Unlink the focused window from its workspace — a normal window again. |
-| `winlandctl toggle-tile` | Tile the focused window: a normal window into the workspace on its monitor, a floating one back into its own workspace's row. On a tile: unlink it. |
+| `winlandctl toggle-tile` | Tile the focused window — a normal or floating one — into the workspace shown on its monitor. On a tile: unlink it. |
 | `winlandctl toggle-fullscreen` | On a tile: cover its whole monitor, keeping its place in the row; again: back into its column. |
 | `winlandctl scratchpad` | Toggle the roaming scratchpad on the monitor under the mouse. |
 | `winlandctl workspace-release` | Release the current workspace from its monitor. |

@@ -23,12 +23,12 @@ internal static class WorkspaceStack
 
     public static IReadOnlyList<StackItem> Items(MonitorWorkspaces monitor)
     {
-        IEnumerable<int> numbered = monitor.Shown is >= 1 and not Ipc.ScratchpadWorkspace
+        IEnumerable<int> numbered = Ipc.IsNumberedWorkspace(monitor.Shown)
             ? monitor.Homed.Append(monitor.Shown)
             : monitor.Homed;
 
         var items = numbered
-            .Where(w => w is >= 1 and not Ipc.ScratchpadWorkspace)
+            .Where(Ipc.IsNumberedWorkspace)
             .Distinct()
             .Order()
             .Select(w => new StackItem(w.ToString(), w == monitor.Shown))

@@ -36,7 +36,7 @@ internal sealed class Dispatcher
                     _workspaces.SwitchFocusedMonitorTo(n);
                     return Ipc.Ok;
                 }
-                return $"{Ipc.ErrPrefix} workspace expects a whole number >= 1";
+                return $"{Ipc.ErrPrefix} workspace expects a whole number >= 0";
 
             case "movetoworkspace":
                 if (TryParseWorkspace(args, out int target))
@@ -44,7 +44,7 @@ internal sealed class Dispatcher
                     FollowedByCursor(() => _workspaces.MoveFocusedWindowToWorkspace(target));
                     return Ipc.Ok;
                 }
-                return $"{Ipc.ErrPrefix} movetoworkspace expects a whole number >= 1";
+                return $"{Ipc.ErrPrefix} movetoworkspace expects a whole number >= 0";
 
             case "move-workspace":
                 // "<workspace> <monitor device>" — sent by the indicator when a dragged circle enters another
@@ -56,7 +56,7 @@ internal sealed class Dispatcher
                         ? Ipc.Ok
                         : $"{Ipc.ErrPrefix} no monitor '{parts[1]}'";
                 }
-                return $"{Ipc.ErrPrefix} move-workspace expects a whole number >= 1 and a monitor device name";
+                return $"{Ipc.ErrPrefix} move-workspace expects a whole number >= 0 and a monitor device name";
 
             case "link-here":
                 FollowedByCursor(_workspaces.LinkFocusedWindowToCurrentWorkspace);
@@ -156,12 +156,10 @@ internal sealed class Dispatcher
             return true;
         });
 
-    // A user-facing workspace number: any whole number >= 1 except the value reserved for the
+    // A user-facing workspace number: any whole number >= 0 except the value reserved for the
     // scratchpad, which is only ever entered through its own toggle.
     private static bool TryParseWorkspace(string s, out int workspace) =>
-        int.TryParse(s, out workspace)
-        && workspace >= 1
-        && workspace != WorkspaceManager.ScratchpadWorkspace;
+        int.TryParse(s, out workspace) && Ipc.IsNumberedWorkspace(workspace);
 
     private static bool TryParseDirection(string s, out Direction dir)
     {

@@ -18,13 +18,13 @@ workspace logic. (See `architecture-overview.md`.)
 strip by the user but still in the workspace; see `tiling.md`).
 
 - **Move** (`Win+Shift+N` → `movetoworkspace N`) — unlink from the old workspace, link to N as a tile.
-- **Tile** (`Win+T` → `toggle-tile`, on a window in no workspace; also `link-here`) — link to the workspace currently shown on the window's
-  monitor, as a tile (a no-op when that monitor shows no workspace).
+- **Tile** (`Win+T` → `toggle-tile`, on a window in no workspace or a floating member; also `link-here`) — link to the workspace currently shown on the window's
+  monitor, as a tile (a no-op when that monitor shows no workspace). A floating member dragged onto
+  another monitor thereby leaves its old workspace.
 - **Open from a Winland shortcut** (`place-next-window`) — link to the workspace shown on the monitor
   under the mouse, as a tile (resizable windows only).
 - **Unlink** (`Win+Shift+Space` → `unlink`) — remove from its workspace; a normal window again.
-  `Win+T` (`toggle-tile`) on a tile does the same. (On a floating member it re-tiles it in its own
-  workspace; membership doesn't change.)
+  `Win+T` (`toggle-tile`) on a tile does the same.
 - **A tile moved past the end of its strip** (`move-window`) — relink to the workspace shown on the
   monitor it crosses to.
 - **Close** — closed windows are pruned *lazily* in `WindowsOf` (when membership is next read).
@@ -62,11 +62,11 @@ keep it in view); the tiling hooks are described in `tiling.md` §4.
 - `_monitors`: HMONITOR → live monitor state; rebuilt from enumeration before every operation.
 
 ### 3.2 Invariants
-1. Workspace ids are any whole number `>= 1` — **not capped**. The shipped config binds 1..9 and
-   11..19; any other number is reachable via `winlandctl workspace <n>`.
+1. Workspace ids are any whole number `>= 0` — **not capped**. The shipped config binds 0..9 and
+   10..19; any other number is reachable via `winlandctl workspace <n>`.
 2. `int.MaxValue` is reserved for the scratchpad and is rejected by the `workspace` /
    `movetoworkspace` verbs.
-3. A monitor's `Current` is either `0` (released/none) or a workspace id `>= 1`.
+3. A monitor's `Current` is either `Ipc.NoWorkspace` (`-1`, released/none) or a workspace id `>= 0`.
 4. `_windowWorkspace` is authoritative for membership.
 5. Switching a workspace on one monitor does not mutate `Current` of other monitors.
 6. A workspace is shown on at most one monitor at a time (`SetShown` clears any other claim).
@@ -130,7 +130,7 @@ time the drag crosses into another one (see `workspace-indicator.md` §4); also 
    `ERR`. Already shown there → nothing to do.
 2. Decide, before anything changes, where the **source** — the monitor showing `n` — goes back to:
    `PreviousWorkspace.For` picks, among the workspaces **homed on the source** that **no monitor is
-   showing**, the most recently shown (`_lastShown`); `0` (show nothing) when there is none. It is pure
+   showing**, the most recently shown (`_lastShown`); `Ipc.NoWorkspace` (show nothing) when there is none. It is pure
    and unit-tested.
 3. **Re-home** `n` to the target. Remember `n`'s frontmost tile on the source (`RememberFrontmost`), and
    carry `n`'s visible floating windows that sit on the source to the target (`MoveWindowToMonitor`:

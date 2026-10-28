@@ -32,11 +32,11 @@ internal sealed class WorkspaceDrag
     public WorkspaceDrag(string device, int workspace, IReadOnlyDictionary<string, DockState> docksAtPress)
     {
         Carrier = device;
-        Workspace = workspace is >= 1 and not Ipc.ScratchpadWorkspace ? workspace : 0;
+        Workspace = Ipc.IsNumberedWorkspace(workspace) ? workspace : Ipc.NoWorkspace;
         _docksAtPress = new Dictionary<string, DockState>(docksAtPress, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>The numbered workspace this drag carries, or 0 when it carries nothing.</summary>
+    /// <summary>The numbered workspace this drag carries, or <see cref="Ipc.NoWorkspace"/> when it carries nothing.</summary>
     public int Workspace { get; }
 
     /// <summary>
@@ -59,7 +59,7 @@ internal sealed class WorkspaceDrag
     /// </summary>
     public bool Follow(string? device)
     {
-        if (Workspace == 0 || device == null || Same(device, Carrier))
+        if (Workspace == Ipc.NoWorkspace || device == null || Same(device, Carrier))
         {
             return false;
         }
@@ -77,7 +77,7 @@ internal sealed class WorkspaceDrag
     /// </summary>
     public (MonitorWorkspaces Monitor, bool Visible) Badge(MonitorWorkspaces monitor)
     {
-        if (Workspace == 0)
+        if (Workspace == Ipc.NoWorkspace)
         {
             return (monitor, true);
         }
@@ -101,7 +101,7 @@ internal sealed class WorkspaceDrag
     /// Whether the drag is over: released, and — if it carried a workspace — the snapshot shows it on the
     /// carrier's monitor (<paramref name="shownOnCarrier"/>).
     /// </summary>
-    public bool IsSettled(int shownOnCarrier) => Released && (Workspace == 0 || shownOnCarrier == Workspace);
+    public bool IsSettled(int shownOnCarrier) => Released && (Workspace == Ipc.NoWorkspace || shownOnCarrier == Workspace);
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

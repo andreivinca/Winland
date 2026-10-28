@@ -24,19 +24,32 @@ public static class Ipc
     /// client that starts before or after Winland ends up with the same state either way.
     ///
     /// One message is one line: space-separated "&lt;device&gt;=&lt;shown&gt;:&lt;homed&gt;" entries,
-    /// ordered left-to-right, e.g. "\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:". The device is the stable GDI
-    /// display name (never contains a space); shown is the raw number of the workspace on screen — 0 for
-    /// "this monitor shows no workspace" and int.MaxValue for the roaming scratchpad; homed is the
+    /// ordered left-to-right, e.g. "\\.\DISPLAY1=4:0,4 \\.\DISPLAY2=-1:". The device is the stable GDI
+    /// display name (never contains a space); shown is the raw number of the workspace on screen —
+    /// <see cref="NoWorkspace"/> for "this monitor shows no workspace" and <see cref="ScratchpadWorkspace"/>
+    /// for the roaming scratchpad; homed is the
     /// comma-separated, ascending list of workspaces whose home is that monitor (possibly empty).
     /// <see cref="MonitorWorkspaces"/> writes and reads it. Presentation is the client's business.
     /// </summary>
     public const string EventsPipeName = "winland-events";
 
     /// <summary>
-    /// The roaming scratchpad's workspace id, as it appears on the event pipe and in commands. Real
-    /// workspaces are whole numbers from 1 and never reach it.
+    /// The roaming scratchpad's workspace id, as it appears on the event pipe and in commands. Numbered
+    /// workspaces never reach it.
     /// </summary>
     public const int ScratchpadWorkspace = int.MaxValue;
+
+    /// <summary>
+    /// "No workspace": what a monitor that shows nothing reports, and what the scratchpad returns its
+    /// monitor to when that monitor showed nothing before. Every numbered workspace (0 included) is above it.
+    /// </summary>
+    public const int NoWorkspace = -1;
+
+    /// <summary>
+    /// A numbered workspace — one Win+N reaches: any whole number from 0, except the scratchpad's id.
+    /// </summary>
+    public static bool IsNumberedWorkspace(int workspace) =>
+        workspace >= 0 && workspace != ScratchpadWorkspace;
 
     public const string Ok = "OK";
     public const string ErrPrefix = "ERR";

@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Winland.Common;
 
 namespace Winland.Tests;
 
@@ -43,10 +44,21 @@ public sealed class PreviousWorkspaceTests
     }
 
     [TestMethod]
-    public void For_WithNoOtherWorkspaceHomedThere_ReturnsZero()
+    public void For_WithNoOtherWorkspaceHomedThere_ReturnsNoWorkspace()
     {
         var homes = new Dictionary<int, string> { [2] = Right, [3] = Left };
         var lastShown = new Dictionary<int, long> { [2] = 5, [3] = 9 };
+
+        int previous = PreviousWorkspace.For(Left, homes, lastShown, shown: new HashSet<int> { 3 });
+
+        Assert.AreEqual(Ipc.NoWorkspace, previous);
+    }
+
+    [TestMethod]
+    public void For_WorkspaceZero_IsAWorkspaceToGoBackTo()
+    {
+        var homes = new Dictionary<int, string> { [0] = Left, [3] = Left };
+        var lastShown = new Dictionary<int, long> { [0] = 5, [3] = 9 };
 
         int previous = PreviousWorkspace.For(Left, homes, lastShown, shown: new HashSet<int> { 3 });
 

@@ -156,7 +156,7 @@ It has **no keyboard hook**: every action originates from the pipe.
 ### 4.4 `Dispatcher`
 - The single source of truth for what Winland can do. Maps a verb to an operation and returns
   the protocol response:
-  - `workspace <n>` (n >= 1, scratchpad id rejected) → `WorkspaceManager.SwitchFocusedMonitorTo`
+  - `workspace <n>` (n >= 0, scratchpad id rejected) → `WorkspaceManager.SwitchFocusedMonitorTo`
   - `movetoworkspace <n>` → `WorkspaceManager.MoveFocusedWindowToWorkspace`
   - `move-workspace <n> <device>` → `WorkspaceManager.MoveWorkspaceToMonitor` (re-home workspace n to
     that monitor and show it there with its windows; the monitor it left goes back to the workspace it
@@ -164,8 +164,8 @@ It has **no keyboard hook**: every action originates from the pipe.
     moment a dragged circle enters another monitor; `ERR` when no such monitor is attached.
   - `link-here` → `WorkspaceManager.LinkFocusedWindowToCurrentWorkspace` (tile it)
   - `unlink` → `WorkspaceManager.UnlinkFocusedWindow` (a normal window again)
-  - `toggle-tile` → `WorkspaceManager.ToggleTiling` (tile a normal window, put a floating one back into
-    its own workspace's strip, or unlink a tile)
+  - `toggle-tile` → `WorkspaceManager.ToggleTiling` (tile a normal or floating window into the workspace
+    shown on its monitor, or unlink a tile)
   - `toggle-fullscreen` → `WorkspaceManager.ToggleFullscreen` (the focused tile covers its whole
     monitor while keeping its column; again: back into the column — see `features/tiling.md` §3.1)
   - `scratchpad` → `WorkspaceManager.ToggleScratchpad`
@@ -248,8 +248,8 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 - Transport: a second local named pipe, `\\.\pipe\winland-events`, outbound only and never read
   from. Same ACL, so unelevated subscribers can attach.
 - One message is one line: space-separated `<device>=<shown>:<homed>` entries, ordered left-to-right,
-  e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=0:`. Device names are the stable GDI names and contain no
-  spaces; `shown` is the raw int on screen — `0` = the monitor shows nothing, `int.MaxValue` = the
+  e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. Device names are the stable GDI names and contain no
+  spaces; `shown` is the raw int on screen — `-1` (`Ipc.NoWorkspace`) = the monitor shows nothing, `int.MaxValue` = the
   scratchpad — and `homed` the ascending, comma-separated workspaces homed there (possibly empty).
   `MonitorWorkspaces` writes and reads it; the client decides how to render it (the indicator lists
   `1 4`, `1 4 S` with the on-screen one underlined, or `–`).

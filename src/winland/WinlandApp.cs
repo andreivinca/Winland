@@ -51,7 +51,7 @@ internal sealed class WinlandApp : ApplicationContext
         "Winland is running, with winland-keys (the shortcuts) and winland-indicator (the workspace\n" +
         "circles). Exit ends all three.\n\n" +
         "Driven by winlandctl over the control pipe:\n" +
-        "  winlandctl workspace <n>          (any whole number >= 1)\n" +
+        "  winlandctl workspace <n>          (any whole number >= 0)\n" +
         "  winlandctl movetoworkspace <n>    move the focused window to n (as a tile)\n" +
         "  winlandctl link-here              tile the focused window in the workspace on its monitor\n" +
         "  winlandctl unlink                 stop tiling the focused window (a normal window again)\n" +

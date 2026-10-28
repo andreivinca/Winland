@@ -41,12 +41,19 @@ public sealed class WorkspaceStackTests
     [TestMethod]
     public void NoWorkspaces_ShowsADash()
     {
-        CollectionAssert.AreEqual(new[] { "–" }, ItemsOf(0));
+        CollectionAssert.AreEqual(new[] { "–" }, ItemsOf(Ipc.NoWorkspace));
     }
 
     [TestMethod]
     public void NothingShown_ListsEveryHomedWorkspaceAsANumber()
     {
-        CollectionAssert.AreEqual(new[] { "2", "5" }, ItemsOf(0, 5, 2));
+        CollectionAssert.AreEqual(new[] { "2", "5" }, ItemsOf(Ipc.NoWorkspace, 5, 2));
+    }
+
+    [TestMethod]
+    public void WorkspaceZero_IsAnOrdinaryWorkspace_ListedFirst()
+    {
+        CollectionAssert.AreEqual(new[] { "[0]", "3" }, ItemsOf(0, 3, 0));
+        CollectionAssert.AreEqual(new[] { "0", "[3]" }, ItemsOf(3, 3, 0));
     }
 }

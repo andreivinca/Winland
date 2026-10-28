@@ -42,7 +42,7 @@ Primary users:
 ## 5. In-Scope Features (Current)
 
 ### 5.1 Workspaces
-- Numbered workspaces, unbounded (`>= 1`); the shipped config binds `1..9` and `11..19`.
+- Numbered workspaces, unbounded (`>= 0`); the shipped config binds `0..19`.
 - Per-monitor current workspace state.
 - Workspace “home monitor” concept:
   - First entry pins workspace to monitor under cursor.
@@ -127,7 +127,7 @@ Primary users:
 
 ## 9. Success Criteria (Product-Level)
 
-- User can reliably switch/focus workspaces with Win+1..9.
+- User can reliably switch/focus workspaces with Win+0..9 (and Win+Alt+0..9 for 10..19).
 - User can focus nearest window directionally with Win+Arrows.
 - User can define and execute app shortcuts from config.
 - App remains running in tray with minimal interruption.

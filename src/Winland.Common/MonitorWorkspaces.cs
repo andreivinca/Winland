@@ -4,7 +4,7 @@ namespace Winland.Common;
 
 /// <summary>
 /// One monitor's line item on the event pipe: what it shows right now, and which workspaces live there.
-/// <paramref name="Shown"/> is the raw id — 0 for nothing, <see cref="Ipc.ScratchpadWorkspace"/> for the
+/// <paramref name="Shown"/> is the raw id — <see cref="Ipc.NoWorkspace"/> for nothing, <see cref="Ipc.ScratchpadWorkspace"/> for the
 /// scratchpad. <paramref name="Homed"/> are the numbered workspaces whose home is this monitor, ascending.
 /// </summary>
 public sealed record MonitorWorkspaces(string Device, int Shown, IReadOnlyList<int> Homed)
@@ -42,8 +42,8 @@ public sealed record MonitorWorkspaces(string Device, int Shown, IReadOnlyList<i
 
             int[] homed = value.Length < 2 ? [] : value[1]
                 .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                .Select(h => int.TryParse(h, NumberStyles.Integer, CultureInfo.InvariantCulture, out int w) ? w : 0)
-                .Where(w => w >= 1)
+                .Select(h => int.TryParse(h, NumberStyles.Integer, CultureInfo.InvariantCulture, out int w) ? w : Ipc.NoWorkspace)
+                .Where(Ipc.IsNumberedWorkspace)
                 .ToArray();
 
             string device = pair[..separator];

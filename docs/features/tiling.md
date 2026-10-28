@@ -10,8 +10,9 @@ either a **tile** or **floating**:
   (`movetoworkspace N`), or by being opened from a Winland shortcut (`place-next-window`, §4.1).
 - A tile the user **drags or resizes** with the mouse **floats**: it leaves the strip and Windows manages
   it where the user put it — even on another monitor — but it stays in its workspace (`_floating`). It
-  is put away and brought back with the workspace, in place. `Win+T` tiles it again, at its old
-  place in the strip.
+  is put away and brought back with the workspace, in place. `Win+T` tiles it into the workspace shown on
+  the monitor it is on now: at its old place if that is its own workspace, otherwise it leaves its old
+  workspace and joins that one.
 - `Win+Shift+Space` (`unlink`) removes a member from its workspace: a normal window again.
 - Winland never tiles, moves or resizes a window that belongs to no workspace on its own. Like everything
   else on a monitor, it is put away (minimized) when that monitor switches workspace or is released,
@@ -57,9 +58,9 @@ their place in the order but take no column.
 
 | Command | Behaviour |
 | --- | --- |
-| `link-here` | Link the focused window to the workspace shown on its monitor as a tile: a new member right after that workspace's focused tile, a floating member back at its old place. On one of its tiles: snap it back into its column. No-op on a monitor showing no workspace. |
+| `link-here` | Link the focused window to the workspace shown on its monitor as a tile: a new member (or a floating member of another workspace, which leaves it) right after that workspace's focused tile, a floating member of this workspace back at its old place. On one of its tiles: snap it back into its column. No-op on a monitor showing no workspace. |
 | `unlink` | Remove the focused window from its workspace; it stays where it is, in front, as a normal window. The strip closes the gap. |
-| `toggle-tile` | On a window in no workspace: `link-here`. On a floating member: re-tile it into its **own** workspace at its old place, from any monitor; if that workspace isn't shown, `workspace` is switched to it (the scratchpad, shown only by its toggle, is put away instead). On a tile: `unlink`. |
+| `toggle-tile` | On a tile: `unlink`. On any other window — in no workspace, or floating: `link-here`, so a floating member dragged onto another monitor joins the workspace shown there. |
 | `movetoworkspace n` | Re-link as a tile of `n` (after `n`'s focused tile), switch to `n`, focus it. The old workspace closes the gap if it is on screen. |
 | `focus left\|right` | On a tile: focus the neighbouring tile and scroll it into view. Past either end of the strip, on any other window, or for `up`/`down`: geometric `FocusNearest` (see `window-focus.md`). |
 | `move-window left\|right` | On a tile: trade places with the neighbour (`TileOrder.MoveTo`). At the end of the strip: join the workspace shown on the adjacent monitor in that direction, entering at the near end (no-op if it shows none). On any other window: `MoveWindowToMonitor` to the adjacent monitor, membership unchanged. |

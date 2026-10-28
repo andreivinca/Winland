@@ -69,9 +69,9 @@ internal sealed partial class WorkspaceManager
     private bool IsTile(IntPtr hWnd) => _windowWorkspace.ContainsKey(hWnd) && !_floating.Contains(hWnd);
 
     /// <summary>
-    /// Tile the focused window (Win+T on a window in no workspace, or the <c>link-here</c> command): link it to the workspace shown on its monitor and put it into that
-    /// workspace's strip — a new window right after the tile that had focus, a floating member back at its
-    /// old place; the other tiles make room. On a tile there, it snaps the tile back into its column. A
+    /// Tile the focused window (Win+T on a window in no workspace or a floating one, or the <c>link-here</c> command): link it to the workspace shown on its monitor and put it into that
+    /// workspace's strip — a new window (or one floating in from another workspace) right after the tile
+    /// that had focus, a floating member of this workspace back at its old place; the other tiles make room. On a tile there, it snaps the tile back into its column. A
     /// no-op when the window's monitor shows no workspace.
     /// </summary>
     public void LinkFocusedWindowToCurrentWorkspace()
@@ -83,7 +83,7 @@ internal sealed partial class WorkspaceManager
         }
 
         RefreshMonitors(); // keep monitor handles live across display-config changes
-        if (!TryGetWindowMonitor(hWnd, out MonitorState? monitor) || monitor!.Current < 1)
+        if (!TryGetWindowMonitor(hWnd, out MonitorState? monitor) || monitor!.Current == NoWorkspace)
         {
             return;
         }
@@ -126,10 +126,10 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// Tile the focused window, or take it out of tiling (Win+T):
-    ///  * A window in no workspace is tiled into the workspace shown on its monitor (<c>link-here</c>).
-    ///  * A floating member (dragged out of its strip) goes back into its OWN workspace's strip, at its old
-    ///    place, wherever it was floating. If that workspace isn't on screen, it is shown on its home
-    ///    monitor with the window in view.
+    ///  * A window in no workspace, or a floating member (dragged out of its strip), is tiled into the
+    ///    workspace shown on the monitor it is on now (<c>link-here</c>). A floating member dragged onto
+    ///    another monitor therefore leaves its old workspace and joins that monitor's; one still on its own
+    ///    workspace's monitor goes back to its old place in the strip.
     ///  * A tile is unlinked: it leaves its workspace and is a normal window again (<c>unlink</c>).
     /// </summary>
     public void ToggleTiling()
@@ -140,44 +140,13 @@ internal sealed partial class WorkspaceManager
             return;
         }
 
-        if (!_windowWorkspace.TryGetValue(hWnd, out int workspace))
-        {
-            LinkFocusedWindowToCurrentWorkspace();
-            return;
-        }
-
-        if (!_floating.Contains(hWnd))
+        if (IsTile(hWnd))
         {
             UnlinkFocusedWindow();
             return;
         }
 
-        RefreshMonitors();
-
-        GuardEvents();
-        Relink(hWnd, workspace, OrderJoining(workspace, hWnd)); // its own workspace: back at its old place
-        MonitorState? monitor = MonitorShowing(workspace);
-        if (monitor != null)
-        {
-            LayoutWorkspace(workspace, monitor, hWnd);
-        }
-        GuardEvents();
-
-        LogTiles($"tile {WsLabel(workspace)}", workspace, hWnd);
-
-        if (monitor == null)
-        {
-            // Tiles show only with their workspace. Show it, with this window in view and focused — or, for
-            // the scratchpad (which only its own toggle shows), put the window away with it.
-            if (workspace == ScratchpadWorkspace)
-            {
-                ShowWindow(hWnd, SW_MINIMIZE);
-            }
-            else
-            {
-                SwitchFocusedMonitorTo(workspace);
-            }
-        }
+        LinkFocusedWindowToCurrentWorkspace();
     }
 
     /// <summary>
@@ -265,7 +234,7 @@ internal sealed partial class WorkspaceManager
         // At the end of the strip: cross to the next monitor, if it shows a workspace to join. Entering
         // through the near end — moving left lands at the right end of the left monitor's strip.
         MonitorState? neighbour = AdjacentMonitor(home, direction);
-        if (neighbour == null || neighbour.Current < 1)
+        if (neighbour == null || neighbour.Current == NoWorkspace)
         {
             return;
         }
@@ -288,12 +257,12 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// Make <paramref name="hWnd"/> a tile of <paramref name="workspace"/>, with the strip in
-    /// <paramref name="order"/>, and the one to focus there. Returns the workspace it left, or 0.
+    /// <paramref name="order"/>, and the one to focus there. Returns the workspace it left, or NoWorkspace.
     /// </summary>
     private int Relink(IntPtr hWnd, int workspace, List<IntPtr> order)
     {
-        int left = _windowWorkspace.TryGetValue(hWnd, out int previous) && previous != workspace ? previous : 0;
-        if (left != 0)
+        int left = _windowWorkspace.TryGetValue(hWnd, out int previous) && previous != workspace ? previous : NoWorkspace;
+        if (left != NoWorkspace)
         {
             ForgetTile(hWnd, left);
         }
@@ -354,7 +323,7 @@ internal sealed partial class WorkspaceManager
             : IntPtr.Zero;
 
     private MonitorState? MonitorShowing(int workspace) =>
-        workspace < 1 ? null : _monitors.Values.FirstOrDefault(m => m.Current == workspace);
+        workspace == NoWorkspace ? null : _monitors.Values.FirstOrDefault(m => m.Current == workspace);
 
     /// <summary>Lay out a workspace again if a monitor shows it, keeping its focused tile in view.</summary>
     private void ReflowShown(int workspace, IntPtr reveal = default)
@@ -736,7 +705,7 @@ internal sealed partial class WorkspaceManager
     private void TileLaunchedWindow(IntPtr hWnd, string device)
     {
         MonitorState? monitor = _monitors.Values.FirstOrDefault(m => m.Device == device);
-        if (monitor == null || monitor.Current < 1 || !IsManaged(hWnd) || _windowWorkspace.ContainsKey(hWnd))
+        if (monitor == null || monitor.Current == NoWorkspace || !IsManaged(hWnd) || _windowWorkspace.ContainsKey(hWnd))
         {
             return;
         }

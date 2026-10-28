@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Winland.Common;
 
 namespace Winland;
 
@@ -17,7 +18,8 @@ internal static class PreviousWorkspace
     /// <param name="lastShown">workspace → when it was last shown: a higher number is more recent. A workspace
     /// that is missing counts as the oldest.</param>
     /// <param name="shown">The workspaces some monitor shows right now.</param>
-    /// <returns>The workspace to show, or 0 — show nothing — when the monitor has no other workspace.</returns>
+    /// <returns>The workspace to show, or <see cref="Ipc.NoWorkspace"/> — show nothing — when the monitor has
+    /// no other workspace.</returns>
     public static int For(
         string device,
         IReadOnlyDictionary<int, string> homes,
@@ -28,5 +30,6 @@ internal static class PreviousWorkspace
             .Select(home => home.Key)
             .OrderByDescending(workspace => lastShown.GetValueOrDefault(workspace))
             .ThenBy(workspace => workspace)
-            .FirstOrDefault();
+            .DefaultIfEmpty(Ipc.NoWorkspace)
+            .First();
 }

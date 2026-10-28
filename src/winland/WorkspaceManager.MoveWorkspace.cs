@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Winland.Common;
 
 namespace Winland;
 
@@ -27,7 +28,7 @@ internal sealed partial class WorkspaceManager
     /// </summary>
     public bool MoveWorkspaceToMonitor(int workspace, string device)
     {
-        if (workspace < 1 || workspace == ScratchpadWorkspace)
+        if (!Ipc.IsNumberedWorkspace(workspace))
         {
             return false; // the scratchpad has no home to move: it roams with its own toggle
         }
@@ -47,7 +48,7 @@ internal sealed partial class WorkspaceManager
         }
 
         // Decided before anything changes: what the monitor it leaves showed before it.
-        int previous = source == null ? 0 : PreviousWorkspaceOn(source);
+        int previous = source == null ? NoWorkspace : PreviousWorkspaceOn(source);
 
         GuardEvents();
         _workspaceHome[workspace] = target.Device;
