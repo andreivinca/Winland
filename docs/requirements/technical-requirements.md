@@ -257,7 +257,10 @@ Z-order predecessors; not minimized per its window placement.
 ### 7.5 The Mouse Follows Focus
 - After `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-tile`, `toggle-fullscreen` and `movetoworkspace`, if the
   foreground window or its visible frame changed and the cursor isn't over it, move the cursor to the
-  centre of its frame (`CursorWarp`).
+  centre of its frame (`CursorWarp`). "Over it" means inside its visible frame, not just in its
+  invisible resize border (which covers the gap between tiles).
+- When a window becomes a tile through Win+T (`link-here`/`toggle-tile`) or by being opened from a
+  Winland shortcut, move the cursor to the centre of its frame, even if it was already over it.
 - After showing a workspace (`workspace`, `scratchpad` on/off), move the cursor to the centre of the
   window focused there unless it is over it already; with nothing focused, to the centre of that
   workspace's monitor unless it is on that monitor already. `workspace-release` and `move-workspace`

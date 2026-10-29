@@ -72,7 +72,7 @@ internal sealed partial class WorkspaceManager
     /// Tile the focused window (Win+T on a window in no workspace or a floating one, or the <c>link-here</c> command): link it to the workspace shown on its monitor and put it into that
     /// workspace's strip — a new window (or one floating in from another workspace) right after the tile
     /// that had focus, a floating member of this workspace back at its old place; the other tiles make room. On a tile there, it snaps the tile back into its column. A
-    /// no-op when the window's monitor shows no workspace.
+    /// no-op when the window's monitor shows no workspace. The mouse goes to the middle of the tile.
     /// </summary>
     public void LinkFocusedWindowToCurrentWorkspace()
     {
@@ -94,6 +94,7 @@ internal sealed partial class WorkspaceManager
         int left = Relink(hWnd, workspace, OrderJoining(workspace, hWnd));
         LayoutWorkspace(workspace, monitor, hWnd);
         ReflowShown(left);
+        CursorWarp.CentreOn(hWnd);
         GuardEvents();
 
         LogTiles($"link {WsLabel(workspace)}", workspace, hWnd);
@@ -702,7 +703,8 @@ internal sealed partial class WorkspaceManager
 
     /// <summary>
     /// Opened from a Winland shortcut: the window joins the workspace shown on the monitor it was placed on,
-    /// as a tile right after the focused one. (Windows opened any other way stay unlinked until Win+T.)
+    /// as a tile right after the focused one, with the mouse in its middle. (Windows opened any other way stay
+    /// unlinked until Win+T.)
     /// </summary>
     private void TileLaunchedWindow(IntPtr hWnd, string device)
     {
@@ -715,6 +717,7 @@ internal sealed partial class WorkspaceManager
         int workspace = monitor.Current;
         Relink(hWnd, workspace, OrderJoining(workspace, hWnd));
         LayoutWorkspace(workspace, monitor, hWnd);
+        CursorWarp.CentreOn(hWnd);
 
         LogTiles($"tile launched {WsLabel(workspace)}", workspace, hWnd);
     }

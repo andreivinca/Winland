@@ -76,8 +76,17 @@ Selection rule:
 `focus`, `focus-app`, `focus-web`, `move-window`, `link-here`, `toggle-tile`, `toggle-fullscreen` and `movetoworkspace` run through
 `Dispatcher.FollowedByCursor`: it records the foreground window and its visible frame (DWM extended
 frame bounds) before the command, and afterwards — if the foreground window or its frame changed and
-the cursor isn't already over it (`WindowFromPoint` → root) — calls `SetCursorPos` on the centre of its
-frame. A command that changes nothing leaves the mouse alone.
+the cursor isn't already over it — calls `SetCursorPos` on the centre of its frame. A command that
+changes nothing leaves the mouse alone.
+
+"Over it" means `WindowFromPoint` → root is the window **and** the cursor is inside its visible frame
+(`CursorWarp.IsOverFrame`). The hit test alone also counts the invisible resize border around a window,
+which spans the gap between two tiles: a cursor resting in that gap (e.g. the middle of the screen with
+two tiles) used to count as over whichever tile was focused, so it never followed focus again.
+
+A window that just became a tile — tiled with `link-here`/`toggle-tile` (Win+T), or opened from a
+Winland shortcut and tiled by launch placement — gets `CursorWarp.CentreOn`: the mouse goes to the
+middle of its new column even if it was already over it.
 
 Showing a workspace — `workspace`, and `scratchpad` on or off — can't use that diff: while the outgoing
 windows are put away Windows may activate any window. So `WorkspaceManager.BringCursorTo` takes the

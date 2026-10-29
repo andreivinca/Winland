@@ -108,7 +108,8 @@ ends up in view and focused — if the target lives on a different monitor, the 
 **The mouse follows the keyboard.** When a shortcut focuses another window (`Win`+arrows, launch-or-focus
 shortcuts) or moves the focused one (`Win`+`Shift`+arrows, `Win`+`Space`, `Win`+`Shift`+`N`), the
 cursor jumps to the middle of that window — unless it is already over it. So the next click, scroll, or
-"focus follows mouse" hover lands on the window you just moved to. Switching to a workspace
+"focus follows mouse" hover lands on the window you just moved to. A window that becomes a tile — with
+`Win`+`T`, or opened from a Winland shortcut — always gets the mouse in its middle. Switching to a workspace
 (`Win`+`N`, `Win`+`S`) does the same with the window it focuses there; an empty workspace brings the
 mouse to the middle of its monitor instead, so an app you launch next opens there. (The mouse's monitor
 is also where a never-used workspace or the scratchpad opens, so after a switch that is the monitor

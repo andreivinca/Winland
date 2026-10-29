@@ -10,6 +10,9 @@ internal readonly record struct TileRect(int Left, int Top, int Right, int Botto
     public int Width => Right - Left;
     public int Height => Bottom - Top;
 
+    /// <summary>Whether the point lies inside (right and bottom edges excluded).</summary>
+    public bool Contains(int x, int y) => x >= Left && x < Right && y >= Top && y < Bottom;
+
     /// <summary>Whether every edge is within <paramref name="tolerance"/> pixels of <paramref name="other"/>'s.</summary>
     public bool IsNear(TileRect other, int tolerance) =>
         Math.Abs(Left - other.Left) <= tolerance

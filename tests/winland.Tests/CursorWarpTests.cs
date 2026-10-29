@@ -63,6 +63,25 @@ public sealed class CursorWarpTests
     }
 
     [TestMethod]
+    public void IsOverFrame_InTheGapBetweenTiles_IsNotOverTheWindow_EvenThoughTheHitTestFindsIt()
+    {
+        // The 8 px gap between the columns is covered by the focused tile's invisible resize border, so
+        // Windows' hit test reports that tile there. Counting it as "over" left a mouse parked in the gap
+        // (e.g. the middle of the screen) behind on every focus change.
+        Assert.IsFalse(CursorWarp.IsOverFrame(RightColumn, cursorX: 641, cursorY: 500, hitTestFindsWindow: true));
+        Assert.AreEqual((959, 516), CursorWarp.WindowTarget(RightColumn,
+            CursorWarp.IsOverFrame(RightColumn, 641, 500, hitTestFindsWindow: true)));
+    }
+
+    [TestMethod]
+    public void IsOverFrame_InsideTheVisibleFrame_FollowsTheHitTest()
+    {
+        Assert.IsTrue(CursorWarp.IsOverFrame(RightColumn, cursorX: 700, cursorY: 500, hitTestFindsWindow: true));
+        Assert.IsFalse(CursorWarp.IsOverFrame(RightColumn, cursorX: 700, cursorY: 500, hitTestFindsWindow: false),
+            "another window covers it there");
+    }
+
+    [TestMethod]
     public void AreaTarget_FromAnotherMonitor_IsThatMonitorsCentre()
     {
         var leftMonitor = new TileRect(-1920, 0, 0, 1032);
