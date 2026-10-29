@@ -11,7 +11,7 @@
          every monitor, which tiling needs to place windows exactly on mixed-DPI setups. -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <AssemblyName>winland</AssemblyName>
-    <Version>0.7.1</Version>
+    <Version>0.7.2</Version>
   </PropertyGroup>
 
   <ItemGroup>
