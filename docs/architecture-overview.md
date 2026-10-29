@@ -211,8 +211,8 @@ It has **no keyboard hook**: every action originates from the pipe.
 
 - `Program` — single-instance mutex (`Local\winland-indicator`), `ApplicationConfiguration.Initialize()`
   (per-monitor-v2 DPI), runs `IndicatorApp`.
-- `IndicatorApp` — enumerates monitors with Win32 (so device names match `winland`'s
-  `\\.\DISPLAYn`) and keeps one `IndicatorWindow` per monitor in step with
+- `IndicatorApp` — enumerates monitors with Win32 and names each by `MonitorIdentity` (so device
+  names match `winland`'s) and keeps one `IndicatorWindow` per monitor in step with
   `SystemEvents.DisplaySettingsChanged`; loads/saves dock positions; applies each snapshot; and runs
   drags: it applies `WorkspaceDrag`'s rules (which circle carries the drag, which glyph shows where) and
   sends `move-workspace` the moment a dragged workspace enters another monitor, through
@@ -248,8 +248,8 @@ See `features/workspace-indicator.md` for the interaction rules and persistence 
 - Transport: a second local named pipe, `\\.\pipe\winland-events`, outbound only and never read
   from. Same ACL, so unelevated subscribers can attach.
 - One message is one line: space-separated `<device>=<shown>:<homed>` entries, ordered left-to-right,
-  e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. Device names are the stable GDI names and contain no
-  spaces; `shown` is the raw int on screen — `-1` (`Ipc.NoWorkspace`) = the monitor shows nothing, `int.MaxValue` = the
+  e.g. `\\?\DISPLAY#DELA1C4#…#{…}=4:1,4 \\?\DISPLAY#DELA1C5#…#{…}=-1:`. Device names are the stable
+  monitor ids from `MonitorIdentity` (the monitor's device interface path) and contain no spaces or `=`; `shown` is the raw int on screen — `-1` (`Ipc.NoWorkspace`) = the monitor shows nothing, `int.MaxValue` = the
   scratchpad — and `homed` the ascending, comma-separated workspaces homed there (possibly empty).
   `MonitorWorkspaces` writes and reads it; the client decides how to render it (the indicator lists
   `1 4`, `1 4 S` with the on-screen one underlined, or `–`).

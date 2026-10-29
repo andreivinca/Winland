@@ -140,8 +140,8 @@ on the command pipe.
   asynchronous, several server instances (8), created with the same user ACL so unelevated
   subscribers can attach. `winland` is the server; `winland-indicator` is the client.
 - Message grammar: one line per snapshot — space-separated `<device>=<shown>:<homed>` entries, ordered
-  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. The device is the stable GDI display name
-  (contains no space); `shown` is the raw int: `-1` (`Ipc.NoWorkspace`) = the monitor shows no workspace,
+  left-to-right, e.g. `\\?\DISPLAY#DELA1C4#…#{…}=4:1,4 \\?\DISPLAY#DELA1C5#…#{…}=-1:`. The device is
+  the stable monitor id from `MonitorIdentity` (contains no space or `=`); `shown` is the raw int: `-1` (`Ipc.NoWorkspace`) = the monitor shows no workspace,
   `int.MaxValue` = the scratchpad; `homed` is the ascending, comma-separated list of workspaces homed
   on that monitor (possibly empty). Written and read only by `Winland.Common.MonitorWorkspaces`.
   Rendering is the client's job.

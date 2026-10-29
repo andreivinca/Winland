@@ -53,9 +53,13 @@ keep it in view); the tiling hooks are described in `tiling.md` §4.
 - `_tileOrder`, `_floating`, `_scrollFirst`, `_arranged`: each workspace's strip order, floating
   members, scroll position, and last
   layout (see `tiling.md`).
-- `_workspaceHome`: workspace → home monitor, stored as the stable GDI **device name**
-  (`\\.\DISPLAYn`), *not* an HMONITOR — handles are reissued on sleep/wake/display changes.
-- `_shownByDevice`: device name → the workspace shown on that monitor; survives a monitor dropping
+- `_workspaceHome`: workspace → home monitor, stored as the stable **monitor id**
+  (`MonitorIdentity`: the monitor's device interface path, e.g.
+  `\\?\DISPLAY#DELA1C4#5&340bf2b6&0&UID4357#{…}` — model plus connector). *Not* an HMONITOR —
+  handles are reissued on sleep/wake/display changes — and *not* the GDI name (`\\.\DISPLAYn`),
+  which Windows can give to the other monitor when monitors power off and on again; keying on it
+  swapped every workspace between monitors overnight.
+- `_shownByDevice`: monitor id → the workspace shown on that monitor; survives a monitor dropping
   out of enumeration (sleep), so a wake restores what it was showing.
 - `_lastShown`: workspace → when it was last shown (ticks of `_showClock`, stamped by `SetShown`). Used
   only to pick the workspace a monitor goes back to when its workspace is moved away (§7a).
@@ -123,10 +127,11 @@ never has a home to unpin).
 
 Sent by the on-screen indicator the moment a dragged circle enters another monitor — and again each
 time the drag crosses into another one (see `workspace-indicator.md` §4); also reachable as
-`winlandctl move-workspace 3 \\.\DISPLAY2`. `MoveWorkspaceToMonitor(n, device)`
+`winlandctl move-workspace 3 \\.\DISPLAY2` (a hand-typed GDI name is translated to the monitor id).
+`MoveWorkspaceToMonitor(n, device)`
 (`WorkspaceManager.MoveWorkspace.cs`):
 
-1. `RefreshMonitors()`; find the target by device name (case-insensitive). No such monitor attached →
+1. `RefreshMonitors()`; find the target by monitor id (case-insensitive). No such monitor attached →
    `ERR`. Already shown there → nothing to do.
 2. Decide, before anything changes, where the **source** — the monitor showing `n` — goes back to:
    `PreviousWorkspace.For` picks, among the workspaces **homed on the source** that **no monitor is

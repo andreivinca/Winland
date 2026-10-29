@@ -13,7 +13,7 @@ namespace Winland;
 /// </summary>
 internal static class PreviousWorkspace
 {
-    /// <param name="device">The monitor that is losing its workspace (stable GDI device name).</param>
+    /// <param name="device">The monitor that is losing its workspace (stable monitor id).</param>
     /// <param name="homes">workspace → the device it is homed on.</param>
     /// <param name="lastShown">workspace → when it was last shown: a higher number is more recent. A workspace
     /// that is missing counts as the oldest.</param>

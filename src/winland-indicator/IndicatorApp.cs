@@ -350,8 +350,8 @@ internal sealed class IndicatorApp : ApplicationContext
     // ----- Win32 -----
 
     /// <summary>
-    /// Enumerate live monitors left-to-right. We ask Win32 rather than WinForms' Screen so the device
-    /// names are exactly the ones winland keys its workspace state on (\\.\DISPLAYn), and we take
+    /// Enumerate live monitors left-to-right. We ask Win32 rather than WinForms' Screen so each device is
+    /// named exactly as winland names it on the event pipe (<see cref="MonitorIdentity"/>), and we take
     /// the WORK area so a circle never lands under the taskbar.
     /// </summary>
     private static List<MonitorInfo> EnumerateMonitors()
@@ -366,7 +366,7 @@ internal sealed class IndicatorApp : ApplicationContext
                 RECT bounds = info.rcMonitor;
                 RECT work = info.rcWork;
                 found.Add(new MonitorInfo(
-                    info.szDevice ?? "",
+                    MonitorIdentity.Of(info.szDevice ?? ""),
                     Rectangle.FromLTRB(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom),
                     Rectangle.FromLTRB(work.Left, work.Top, work.Right, work.Bottom),
                     DpiOf(hMon)));

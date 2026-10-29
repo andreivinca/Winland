@@ -24,7 +24,8 @@ internal sealed partial class WorkspaceManager
     ///  * focus ends on the moved workspace. The mouse is left alone: this is a mouse gesture, and the drag
     ///    that asked for it is still under way — the user may carry the workspace on, or back.
     /// A workspace no monitor shows is simply re-homed and shown there. Returns false when the workspace is
-    /// not a numbered one or no monitor <paramref name="device"/> is attached.
+    /// not a numbered one or no monitor <paramref name="device"/> is attached. <paramref name="device"/> is
+    /// the monitor's id (<see cref="MonitorIdentity"/>) or, typed by hand, its current \\.\DISPLAYn name.
     /// </summary>
     public bool MoveWorkspaceToMonitor(int workspace, string device)
     {
@@ -34,8 +35,9 @@ internal sealed partial class WorkspaceManager
         }
 
         RefreshMonitors(); // keep monitor handles live across display-config changes
+        string id = MonitorIdentity.Of(device);
         MonitorState? target = _monitors.Values.FirstOrDefault(
-            m => string.Equals(m.Device, device, StringComparison.OrdinalIgnoreCase));
+            m => string.Equals(m.Device, id, StringComparison.OrdinalIgnoreCase));
         if (target == null)
         {
             return false;

@@ -24,8 +24,8 @@ public static class Ipc
     /// client that starts before or after Winland ends up with the same state either way.
     ///
     /// One message is one line: space-separated "&lt;device&gt;=&lt;shown&gt;:&lt;homed&gt;" entries,
-    /// ordered left-to-right, e.g. "\\.\DISPLAY1=4:0,4 \\.\DISPLAY2=-1:". The device is the stable GDI
-    /// display name (never contains a space); shown is the raw number of the workspace on screen —
+    /// ordered left-to-right, e.g. "\\?\DISPLAY#DELA1C4#…#{…}=4:0,4 \\?\DISPLAY#DELA1C5#…#{…}=-1:". The device
+    /// is the stable monitor id (<see cref="MonitorIdentity"/>; never contains a space or '='); shown is the raw number of the workspace on screen —
     /// <see cref="NoWorkspace"/> for "this monitor shows no workspace" and <see cref="ScratchpadWorkspace"/>
     /// for the roaming scratchpad; homed is the
     /// comma-separated, ascending list of workspaces whose home is that monitor (possibly empty).

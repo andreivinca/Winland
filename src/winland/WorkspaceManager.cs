@@ -28,7 +28,7 @@ internal sealed partial class WorkspaceManager : IDisposable
     private sealed class MonitorState
     {
         public IntPtr Handle;
-        public string Device = "";   // stable GDI device name (e.g. \\.\DISPLAY1) — survives handle reissue
+        public string Device = "";   // stable monitor id (MonitorIdentity) — survives handle reissue and power cycles
         public RECT Work;
         public bool Primary;
         public int Current = NoWorkspace;
@@ -38,10 +38,10 @@ internal sealed partial class WorkspaceManager : IDisposable
     private readonly Dictionary<IntPtr, int> _windowWorkspace = new();
     // workspace -> most recently focused window (restores focus after a switch, and keeps it in view).
     private readonly Dictionary<int, IntPtr> _lastActive = new();
-    // workspace -> the monitor it is linked to, by stable device name (NOT HMONITOR, which is reissued on
-    // sleep/wake/display-config changes). Set the first time the workspace is entered and kept until released.
+    // workspace -> the monitor it is linked to, by stable monitor id (NOT HMONITOR, which is reissued on
+    // sleep/wake/display-config changes, nor \\.\DISPLAYn, which Windows reassigns when monitors power-cycle). Set the first time the workspace is entered and kept until released.
     private readonly Dictionary<int, string> _workspaceHome = new();
-    // device name -> the workspace currently shown on that monitor. Survives the monitor temporarily
+    // monitor id -> the workspace currently shown on that monitor. Survives the monitor temporarily
     // dropping out of enumeration (sleep/power-off), so a wake restores what it was showing instead of nothing.
     private readonly Dictionary<string, int> _shownByDevice = new();
     // workspace -> when it was last shown (a tick of _showClock; higher = more recent). A monitor whose
@@ -133,7 +133,7 @@ internal sealed partial class WorkspaceManager : IDisposable
                 found.Add(new MonitorState
                 {
                     Handle = hMon,
-                    Device = info.szDevice ?? "",
+                    Device = MonitorIdentity.Of(info.szDevice ?? ""),
                     Work = info.rcWork,
                     Primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0
                 });
@@ -177,8 +177,9 @@ internal sealed partial class WorkspaceManager : IDisposable
     /// afterwards the cached handles go stale and every "is this window on this monitor" test fails — so a
     /// Win+N switch updates <see cref="MonitorState.Current"/> but minimizes/restores nothing.
     ///
-    /// We key all persistent state (workspace homes, what each monitor is showing) on the stable GDI
-    /// device name (\\.\DISPLAYn) rather than the volatile HMONITOR. A monitor that sleeps simply stops
+    /// We key all persistent state (workspace homes, what each monitor is showing) on the stable monitor
+    /// id (<see cref="MonitorIdentity"/>) rather than the volatile HMONITOR or the GDI name (\\.\DISPLAYn),
+    /// which Windows can hand to the other monitor after they power-cycle. A monitor that sleeps simply stops
     /// enumerating; we keep its shown-workspace in <see cref="_shownByDevice"/> and restore it by device
     /// name when it wakes — so a sleep/wake no longer resets the monitor to "no workspace" or
     /// orphans its homed workspaces. Called before each switch/release.

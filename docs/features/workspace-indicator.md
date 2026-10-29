@@ -149,11 +149,14 @@ log), `winland-indicator-dock.txt`:
 
 ```
 # <device> <edge> <offset along the edge, 0..1>
-\\.\DISPLAY1 Top 0.8
-\\.\DISPLAY2 Right 0.12
+\\?\DISPLAY#DELA1C4#5&340bf2b6&0&UID4357#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7} Top 0.8
+\\?\DISPLAY#DELA1C5#5&340bf2b6&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7} Right 0.12
 ```
 
-- Keyed by the **stable GDI device name**, so a monitor keeps its position across handle reissue.
+- Keyed by the **stable monitor id** (`MonitorIdentity`: the monitor's device interface path), so a
+  monitor keeps its position across handle reissue and across monitors powering off and on — which
+  can reshuffle the `\\.\DISPLAYn` names. Entries in the old `\\.\DISPLAYn` form no longer match any
+  monitor; those circles start at the default once.
 - The position along the edge is a **fraction**, not a pixel coordinate, so a resolution, DPI or
   taskbar change keeps the circle where the user put it instead of drifting or landing off-screen.
 - Written when a drag is released — every circle's dock, so a drag that ended on another monitor
@@ -169,7 +172,8 @@ log), `winland-indicator-dock.txt`:
 (`Ipc.EventsPipeName`), which is **outbound only** — nothing a subscriber could write is ever read.
 
 - **Message**: one line per snapshot, space-separated `<device>=<shown>:<homed>` entries ordered
-  left-to-right, e.g. `\\.\DISPLAY1=4:1,4 \\.\DISPLAY2=-1:`. Device names contain no spaces, so the format
+  left-to-right, e.g. `\\?\DISPLAY#DELA1C4#…#{…}=4:1,4 \\?\DISPLAY#DELA1C5#…#{…}=-1:`. Device names
+  (`MonitorIdentity`) contain no spaces or `=`, so the format
   needs no escaping. `shown` is the **raw** number on screen: `-1` (`Ipc.NoWorkspace`) = nothing shown, `int.MaxValue` = the
   scratchpad. `homed` is the comma-separated, ascending list of workspaces whose home is that monitor
   (possibly empty). `MonitorWorkspaces` (in `Winland.Common`) is the one place it is written and read;

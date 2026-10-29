@@ -75,7 +75,7 @@ internal sealed class IndicatorWindow : Form
         Text = string.Empty;    // untitled + tool window = ignored by every managed-window filter
     }
 
-    /// <summary>The monitor this circle belongs to, by stable GDI device name (e.g. \\.\DISPLAY1).</summary>
+    /// <summary>The monitor this circle belongs to, by stable monitor id (<see cref="MonitorIdentity"/>).</summary>
     public string Device => _monitor.Device;
 
     /// <summary>The monitor this circle belongs to.</summary>
